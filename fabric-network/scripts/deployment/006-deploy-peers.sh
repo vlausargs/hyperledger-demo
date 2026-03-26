@@ -114,6 +114,7 @@ services:
       - CORE_CHAINCODE_LOGGING_LEVEL=INFO
       - CORE_CHAINCODE_LOGGING_SHIM=INFO
       - CORE_CHAINCODE_LOGGING_FORMAT= '%{color}%{time:2006-01-02 15:04:15.000 MST} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}'
+      - CORE_CHAINCODE_MODE=dev
       - GOPROXY=https://goproxy.cn,direct
       - GOSUMDB=off
       - GO111MODULE=on

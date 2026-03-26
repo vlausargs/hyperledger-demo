@@ -74,33 +74,6 @@ setup_crypto() {
         exit 1
     fi
 
-    # Reenroll admin user to ensure certificates exist
-    print_status $YELLOW "Reenrolling admin users to ensure certificates exist..."
-
-    # Create temporary directory for CA bootstrap admin
-    local ca_bootstrap_dir="/tmp/fabric_ca_bootstrap"
-    rm -rf "$ca_bootstrap_dir"
-    mkdir -p "$ca_bootstrap_dir"
-
-    # Enroll CA bootstrap admin (Org1)
-    if [ "$DEPLOY_ORG1" = true ]; then
-        print_status $YELLOW "Enrolling Org1 CA bootstrap admin..."
-        if FABRIC_CA_CLIENT_HOME="$ca_bootstrap_dir/org1" fabric-ca-client enroll -u http://ca.${ORG1_DOMAIN}-admin:ca.${ORG1_DOMAIN}-adminpw@localhost:${CA_ORG1_PORT} > /dev/null 2>&1; then
-            print_status $GREEN "✓ Enrolled Org1 CA bootstrap admin"
-
-            # Enroll user1 client identity using bootstrap admin credentials
-            print_status $YELLOW "Enrolling user1 client identity..."
-            local user1_msp_dir="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/user1.${ORG1_DOMAIN}"
-            if FABRIC_CA_CLIENT_HOME="$user1_msp_dir" fabric-ca-client enroll -u http://ca.${ORG1_DOMAIN}-admin:ca.${ORG1_DOMAIN}-adminpw@localhost:${CA_ORG1_PORT} > /dev/null 2>&1; then
-                print_status $GREEN "✓ Enrolled user1 client identity"
-            else
-                print_status $YELLOW "Warning: Failed to enroll user1, attempting to use existing certificates..."
-            fi
-        else
-            print_status $YELLOW "Warning: Failed to enroll Org1 CA bootstrap admin, attempting to use existing certificates..."
-        fi
-    fi
-
     # Create crypto directory structure
     local client_crypto_dir="${PROJECT_ROOT}/fabric-network/client/crypto"
     mkdir -p "${client_crypto_dir}/signcerts"
@@ -137,6 +110,7 @@ setup_crypto() {
             print_status $RED "✗ Keystore directory not found at ${user1_msp_dir}/keystore"
             exit 1
         fi
+    fi
 
     # Copy MSP config file
     if [ -f "${user1_msp_dir}/config.yaml" ]; then
@@ -166,7 +140,7 @@ organizations:
     - ca.${ORG1_DOMAIN}
 peers:
   peer0.${ORG1_DOMAIN}:
-    url: grpcs://localhost:${PEER0_ORG1_PORT}
+    url: grpcs://peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT}
     tlsCACerts:
       pem: |
 $(cat "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt" | sed 's/^/        /')
@@ -235,7 +209,7 @@ export CHAINCODE_ID="${CHAINCODE_NAME}"
 export SERVER_PORT="${CLIENT_PORT}"
 export GIN_MODE="${CLIENT_MODE}"
 export TLS_CERT_PATH="${PROJECT_ROOT}/fabric-network/client/crypto"
-export PEER_ENDPOINT="localhost:${PEER0_ORG1_PORT}"
+export PEER_ENDPOINT="peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT}"
 export GATEWAY_PEER="peer0.${ORG1_DOMAIN}"
 export MSP_ID="${ORG1_NAME}"
 export USER_ID="user1"
@@ -355,7 +329,7 @@ echo ""
 echo "Create asset:"
 echo '  curl -X POST http://localhost:'${CLIENT_PORT}'/api/v1/assets \'
 echo '    -H "Content-Type: application/json" \'
-echo '    -d '\''{"ID":"test1","color":"red","size":10,"owner":"Alice","appraisedValue":100}'\''
+echo '    -d '"'"'{"ID":"test1","color":"red","size":10,"owner":"Alice","appraisedValue":100}'"'"''
 echo ""
 echo "Get specific asset:"
 echo "  curl http://localhost:${CLIENT_PORT}/api/v1/assets/test1"
@@ -363,12 +337,12 @@ echo ""
 echo "Update asset:"
 echo '  curl -X PUT http://localhost:'${CLIENT_PORT}'/api/v1/assets/test1 \'
 echo '    -H "Content-Type: application/json" \'
-echo '    -d '\''{"color":"blue","size":15,"owner":"Bob","appraisedValue":150}'\''
+echo '    -d '"'"'{"color":"blue","size":15,"owner":"Bob","appraisedValue":150}'"'"''
 echo ""
 echo "Transfer asset:"
 echo '  curl -X POST http://localhost:'${CLIENT_PORT}'/api/v1/assets/test1/transfer \'
 echo '    -H "Content-Type: application/json" \'
-echo '    -d '\''{"newOwner":"Charlie"}'\''
+echo '    -d '"'"'{"newOwner":"Charlie"}'"'"''
 echo ""
 echo "Stop client application:"
 echo "  pkill -f fabric-client"
@@ -388,10 +362,10 @@ export CHAINCODE_ID="basic"
 export SERVER_PORT="8080"
 export GIN_MODE="debug"
 export TLS_CERT_PATH="./crypto"
-export PEER_ENDPOINT="localhost:7051"
+export PEER_ENDPOINT="peer0.org1.example.com:8051"
 export GATEWAY_PEER="peer0.org1.example.com"
 export MSP_ID="Org1MSP"
-export USER_ID="appUser"
+export USER_ID="user1"
 export CONNECTION_PROFILE="./crypto/connection-profile.yaml"
 export ORG_NAME="Org1"
 

@@ -282,12 +282,14 @@ create_org_msp_structure() {
 
     # Copy TLS CA certificates if they exist
     # For orderers, TLS CA certificates are in the tls directory, not msp directory
-    if [ "${org_type}" = "orderer" ] && [ -d "${identity_dir}/tls/tlscacerts" ]; then
+    if [ -d "${identity_dir}/tls/tlscacerts" ]; then
         cp -r "${identity_dir}/tls/tlscacerts/"*.pem "${org_msp_dir}/tlscacerts/" 2>/dev/null || true
-        print_status $GREEN "✓ TLS CA certificates copied to ${org_msp_dir}/tlscacerts"
+        print_status $GREEN "✓ TLS CA certificates copied from tls/tlscacerts to ${org_msp_dir}/tlscacerts"
     elif [ -d "${identity_dir}/msp/tlscacerts" ]; then
         cp -r "${identity_dir}/msp/tlscacerts/"*.pem "${org_msp_dir}/tlscacerts/" 2>/dev/null || true
-        print_status $GREEN "✓ TLS CA certificates copied to ${org_msp_dir}/tlscacerts"
+        print_status $GREEN "✓ TLS CA certificates copied from msp/tlscacerts to ${org_msp_dir}/tlscacerts"
+    else
+        print_status $YELLOW "⚠ No TLS CA certificates found for ${org_domain}"
     fi
 
     # Copy intermediate certificates if they exist
