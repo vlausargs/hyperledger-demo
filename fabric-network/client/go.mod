@@ -4,8 +4,8 @@ go 1.25.0
 
 require (
 	github.com/gin-gonic/gin v1.12.0
-	github.com/hyperledger/fabric-gateway v1.10.1
-	google.golang.org/grpc v1.78.0
+	github.com/hyperledger/fabric-gateway v1.5.1
+	google.golang.org/grpc v1.67.3
 )
 
 require (

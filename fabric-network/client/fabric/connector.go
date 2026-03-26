@@ -6,11 +6,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/hyperledger/fabric-gateway/pkg/client"
 	"github.com/hyperledger/fabric-gateway/pkg/identity"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 )
 
 // Gateway represents the Fabric Gateway connection
@@ -86,37 +88,59 @@ func (gw *Gateway) connect() error {
 	}
 
 	// Create gRPC connection with TLS
-	grpcCredentials := credentials.NewClientTLSFromCert(certPool, "")
-	grpcConnection, err := grpc.Dial(gw.peerEndpoint, grpc.WithTransportCredentials(grpcCredentials))
+	grpcCredentials := credentials.NewClientTLSFromCert(certPool, "peer0.org1.example.com")
+
+	gw.logger.Printf("Attempting to connect to peer at %s with server name override: peer0.org1.example.com", gw.peerEndpoint)
+
+	grpcConnection, err := grpc.Dial(
+		gw.peerEndpoint,
+		grpc.WithTransportCredentials(grpcCredentials),
+		grpc.WithBlock(),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                120 * time.Second,
+			Timeout:             20 * time.Second,
+			PermitWithoutStream: false,
+		}),
+	)
 	if err != nil {
-		return fmt.Errorf("failed to create gRPC connection: %w", err)
+		return fmt.Errorf("failed to create gRPC connection to %s: %w", gw.peerEndpoint, err)
 	}
 
+	gw.logger.Printf("Successfully established gRPC connection to %s", gw.peerEndpoint)
+
 	// Load identity from wallet
+	gw.logger.Printf("Loading identity from wallet...")
 	id, sign, err := gw.loadIdentity()
 	if err != nil {
 		return fmt.Errorf("failed to load identity: %w", err)
 	}
+	gw.logger.Printf("Identity loaded successfully: MSPID=%s, UserID=%s", gw.mspID, gw.userID)
 
 	// Create gateway
+	gw.logger.Printf("Creating Fabric Gateway connection...")
 	gw.gateway, err = client.Connect(
 		id,
 		client.WithSign(sign),
 		client.WithClientConnection(grpcConnection),
-		client.WithEvaluateTimeout(30),
-		client.WithEndorseTimeout(30),
-		client.WithSubmitTimeout(30),
-		client.WithCommitStatusTimeout(60),
+		client.WithEvaluateTimeout(30*time.Second),
+		client.WithEndorseTimeout(30*time.Second),
+		client.WithSubmitTimeout(30*time.Second),
+		client.WithCommitStatusTimeout(60*time.Second),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create gateway: %w", err)
 	}
+	gw.logger.Printf("Fabric Gateway created successfully")
 
 	// Get network
+	gw.logger.Printf("Getting network for channel: %s", gw.channel)
 	gw.network = gw.gateway.GetNetwork(gw.channel)
+	gw.logger.Printf("Network obtained successfully for channel: %s", gw.channel)
 
 	// Get contract
+	gw.logger.Printf("Getting contract for chaincode: %s", gw.chaincode)
 	gw.contract = gw.network.GetContract(gw.chaincode)
+	gw.logger.Printf("Contract obtained successfully for chaincode: %s", gw.chaincode)
 
 	return nil
 }
@@ -210,12 +234,18 @@ func (gw *Gateway) SubmitTransaction(function string, args ...string) ([]byte, e
 func (gw *Gateway) EvaluateTransaction(function string, args ...string) ([]byte, error) {
 	gw.logger.Printf("Evaluating transaction: %s with args: %v", function, args)
 
+	if gw.contract == nil {
+		return nil, fmt.Errorf("contract is nil, gateway connection may not be properly initialized")
+	}
+
+	gw.logger.Printf("Contract is not nil, proceeding with evaluation...")
 	result, err := gw.contract.EvaluateTransaction(function, args...)
 	if err != nil {
+		gw.logger.Printf("ERROR evaluating transaction: %v", err)
 		return nil, fmt.Errorf("failed to evaluate transaction: %w", err)
 	}
 
-	gw.logger.Printf("Transaction evaluated successfully")
+	gw.logger.Printf("Transaction evaluated successfully, result length: %d bytes", len(result))
 	return result, nil
 }
 

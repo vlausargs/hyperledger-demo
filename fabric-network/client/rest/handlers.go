@@ -79,7 +79,10 @@ func GetAllAssets(gw FabricGateway) gin.HandlerFunc {
 		}
 
 		var assets []Asset
-		if err := json.Unmarshal(result, &assets); err != nil {
+		// Handle empty result gracefully
+		if len(result) == 0 {
+			assets = []Asset{}
+		} else if err := json.Unmarshal(result, &assets); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": fmt.Sprintf("Failed to unmarshal assets: %v", err),
 			})
@@ -247,7 +250,10 @@ func GetAssetHistory(gw FabricGateway) gin.HandlerFunc {
 		}
 
 		var history []AssetHistory
-		if err := json.Unmarshal(result, &history); err != nil {
+		// Handle empty result gracefully
+		if len(result) == 0 {
+			history = []AssetHistory{}
+		} else if err := json.Unmarshal(result, &history); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": fmt.Sprintf("Failed to unmarshal asset history: %v", err),
 			})
@@ -276,7 +282,10 @@ func GetAssetsByRange(gw FabricGateway) gin.HandlerFunc {
 		}
 
 		var assets []Asset
-		if err := json.Unmarshal(result, &assets); err != nil {
+		// Handle empty result gracefully
+		if len(result) == 0 {
+			assets = []Asset{}
+		} else if err := json.Unmarshal(result, &assets); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": fmt.Sprintf("Failed to unmarshal assets: %v", err),
 			})

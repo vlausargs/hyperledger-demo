@@ -23,7 +23,7 @@ const (
 	defaultChaincodeID       = "basic"
 	defaultServerPort        = "8080"
 	defaultTLSCertPath       = "./crypto"
-	defaultPeerEndpoint      = "localhost:7051"
+	defaultPeerEndpoint      = "localhost:8051"
 	defaultGatewayPeer       = "peer0.org1.example.com"
 	defaultConnectionProfile = "./crypto/connection-profile.yaml"
 )
