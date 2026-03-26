@@ -50,9 +50,7 @@ func main() {
 		config.ChaincodeID,
 		config.WalletPath,
 		config.TLSCertPath,
-		config.PeerEndpoint,
-		config.MSPID,
-		config.UserID,
+		config.ConnectionProfile,
 	)
 	if err != nil {
 		logger.Fatalf("Failed to initialize Fabric gateway: %v", err)
@@ -102,18 +100,19 @@ func main() {
 			chaincodes.GET("/:chaincodeId", rest.GetChaincodeInfo(fabricGateway))
 		}
 
-		// Network endpoints
-		network := v1.Group("/network")
-		{
-			network.GET("/peers", rest.GetPeers(fabricGateway))
-			network.GET("/organizations", rest.GetOrganizations(fabricGateway))
-		}
-
 		// Transaction endpoints
 		transactions := v1.Group("/transactions")
 		{
 			transactions.GET("", rest.GetTransactions(fabricGateway))
 			transactions.GET("/:txId", rest.GetTransaction(fabricGateway))
+		}
+
+		// Network endpoints
+		network := v1.Group("/network")
+		{
+			network.GET("/peers", rest.GetPeers(fabricGateway))
+			network.GET("/organizations", rest.GetOrganizations(fabricGateway))
+			network.GET("/connection-profile", getConnectionProfileHandler(fabricGateway))
 		}
 	}
 
@@ -222,6 +221,96 @@ func corsMiddleware() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// getConnectionProfileHandler returns the connection profile information
+func getConnectionProfileHandler(gw *fabric.Gateway) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get connection profile from gateway
+		connProfile := gw.GetConnectionProfile()
+		if connProfile == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Connection profile not loaded",
+			})
+			return
+		}
+
+		// Build a response with key information from the connection profile
+		orgName := connProfile.Client.Organization
+		org, orgExists := connProfile.Organizations[orgName]
+
+		response := gin.H{
+			"profile": gin.H{
+				"name":    connProfile.Name,
+				"version": connProfile.Version,
+			},
+			"client": gin.H{
+				"organization": connProfile.Client.Organization,
+			},
+			"organizations": connProfile.Organizations,
+			"peers": gin.H{
+				"count": len(connProfile.Peers),
+				"list":  getPeerInfo(connProfile),
+			},
+			"certificateAuthorities": gin.H{
+				"count": len(connProfile.CAs),
+				"list":  getCAInfo(connProfile),
+			},
+		}
+
+		if orgExists {
+			response["currentOrganization"] = gin.H{
+				"name":  orgName,
+				"mspid": org.MSPID,
+				"peers": org.Peers,
+				"cas":   org.CertificateAuthorities,
+			}
+		}
+
+		c.JSON(http.StatusOK, response)
+	}
+}
+
+// getPeerInfo extracts peer information from connection profile
+func getPeerInfo(cp *fabric.ConnectionProfile) []gin.H {
+	var peers []gin.H
+	for name, peer := range cp.Peers {
+		peerInfo := gin.H{
+			"name": name,
+			"url":  peer.URL,
+		}
+		if peer.TLSCACerts.Pem != "" {
+			peerInfo["hasTLSCert"] = true
+			peerInfo["tlsCertLength"] = len(peer.TLSCACerts.Pem)
+		} else {
+			peerInfo["hasTLSCert"] = false
+		}
+		if peer.GRPCOptions != nil {
+			peerInfo["grpcOptions"] = peer.GRPCOptions
+		}
+		peers = append(peers, peerInfo)
+	}
+	return peers
+}
+
+// getCAInfo extracts CA information from connection profile
+func getCAInfo(cp *fabric.ConnectionProfile) []gin.H {
+	var cas []gin.H
+	for name, ca := range cp.CAs {
+		caInfo := gin.H{
+			"name":   name,
+			"url":    ca.URL,
+			"caName": ca.CAName,
+		}
+		if ca.TLSCACerts.Pem != "" {
+			caInfo["hasTLSCert"] = true
+			caInfo["tlsCertLength"] = len(ca.TLSCACerts.Pem)
+		} else {
+			caInfo["hasTLSCert"] = false
+		}
+		cas = append(cas, caInfo)
+	}
+	return cas
 }
 
 // requestLogger logs incoming requests

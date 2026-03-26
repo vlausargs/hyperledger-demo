@@ -37,10 +37,10 @@ services:
     working_dir: /opt/gopath/src/github.com/hyperledger/fabric/orderers/orderer1.orderer.example.com
     command: sh -c "apk add --no-cache curl && orderer"
     volumes:
-      - /home/valos/workspace/myindo/hlf-demo/config/channel-artifacts:/etc/hyperledger/fabric/channel-artifacts
-      - /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/msp:/etc/hyperledger/fabric/msp
-      - /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/tls:/etc/hyperledger/fabric/tls
-      - /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/msp:/etc/hyperledger/fabric/org-msp
+      - /home/myindo/workspace/myindo/hyperledger-demo/config/channel-artifacts:/etc/hyperledger/fabric/channel-artifacts
+      - /home/myindo/workspace/myindo/hyperledger-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/msp:/etc/hyperledger/fabric/msp
+      - /home/myindo/workspace/myindo/hyperledger-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/tls:/etc/hyperledger/fabric/tls
+      - /home/myindo/workspace/myindo/hyperledger-demo/organizations/ordererOrganizations/orderer.example.com/msp:/etc/hyperledger/fabric/org-msp
       - orderer1.orderer.example.com:/var/hyperledger/production/orderer
     ports:
       - ${ORDERER_PORT}:7050

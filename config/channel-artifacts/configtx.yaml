@@ -25,7 +25,7 @@ Organizations:
     - &OrdererOrg
         Name: OrdererMSP
         ID: OrdererMSP
-        MSPDir: /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/msp
+        MSPDir: /home/myindo/workspace/myindo/hyperledger-demo/organizations/ordererOrganizations/orderer.example.com/msp
         Policies:
             Readers:
                 Type: Signature
@@ -45,7 +45,7 @@ Organizations:
     - &Org1
         Name: Org1MSP
         ID: Org1MSP
-        MSPDir: /home/valos/workspace/myindo/hlf-demo/organizations/peerOrganizations/org1.example.com/msp
+        MSPDir: /home/myindo/workspace/myindo/hyperledger-demo/organizations/peerOrganizations/org1.example.com/msp
         Policies:
             Readers:
                 Type: Signature
@@ -69,7 +69,7 @@ Organizations:
     - &Org2
         Name: Org2MSP
         ID: Org2MSP
-        MSPDir: /home/valos/workspace/myindo/hlf-demo/organizations/peerOrganizations/org2.example.com/msp
+        MSPDir: /home/myindo/workspace/myindo/hyperledger-demo/organizations/peerOrganizations/org2.example.com/msp
         Policies:
             Readers:
                 Type: Signature
@@ -139,8 +139,8 @@ Orderer: &OrdererDefaults
         Consenters:
             - Host: orderer1.orderer.example.com
               Port: 7050
-              ClientTLSCert: /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/tls/server.crt
-              ServerTLSCert: /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/tls/server.crt
+              ClientTLSCert: /home/myindo/workspace/myindo/hyperledger-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/tls/server.crt
+              ServerTLSCert: /home/myindo/workspace/myindo/hyperledger-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/tls/server.crt
         Options:
             TickInterval: 500ms
             ElectionTick: 10

@@ -110,19 +110,18 @@ setup_crypto() {
             print_status $RED "✗ Keystore directory not found at ${user1_msp_dir}/keystore"
             exit 1
         fi
-    fi
 
-    # Copy MSP config file
-    if [ -f "${user1_msp_dir}/config.yaml" ]; then
-        cp "${user1_msp_dir}/config.yaml" "${client_crypto_dir}/config.yaml"
-        print_status $GREEN "✓ Copied ${ORG1_NAME} MSP config (user1)"
-    else
-        print_status $RED "✗ MSP config not found at ${user1_msp_dir}/config.yaml"
-        exit 1
-    fi
+        # Copy MSP config file
+        if [ -f "${user1_msp_dir}/config.yaml" ]; then
+            cp "${user1_msp_dir}/config.yaml" "${client_crypto_dir}/config.yaml"
+            print_status $GREEN "✓ Copied ${ORG1_NAME} MSP config (user1)"
+        else
+            print_status $RED "✗ MSP config not found at ${user1_msp_dir}/config.yaml"
+            exit 1
+        fi
 
-    # Create connection profile (simplified version)
-    cat > "${client_crypto_dir}/connection-profile.yaml" << EOF
+        # Create connection profile (simplified version)
+        cat > "${client_crypto_dir}/connection-profile.yaml" << EOF
 name: "test-network"
 version: "1.0.0"
 client:
@@ -156,6 +155,7 @@ $(cat "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/ca/msp/cac
     httpOptions:
       verify: false
 EOF
+    fi
 
     print_status $GREEN "✓ Connection profile created"
 }

@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/hyperledger/fabric-gateway v1.5.1
+	gopkg.in/yaml.v3 v3.0.1
 	google.golang.org/grpc v1.67.3
 )
 
