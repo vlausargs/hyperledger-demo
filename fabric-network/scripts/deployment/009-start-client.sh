@@ -68,19 +68,83 @@ print_status $GREEN "✓ Prerequisites verified"
 setup_crypto() {
     print_status $YELLOW "Setting up crypto files for client..."
 
-    # Create crypto directory structure
-    local client_crypto_dir="${PROJECT_ROOT}/client/crypto"
-    mkdir -p "${client_crypto_dir}/organizations"
-
-    # Copy organization crypto materials
-    if [ "$DEPLOY_ORG1" = true ]; then
-        cp -r "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}" "${client_crypto_dir}/organizations/"
-        print_status $GREEN "✓ Copied ${ORG1_NAME} crypto materials"
+    # Check if fabric-ca-client is available
+    if ! command -v fabric-ca-client &> /dev/null; then
+        print_status $RED "Error: fabric-ca-client not found. Please install Fabric CA client."
+        exit 1
     fi
 
-    if [ "$DEPLOY_ORG2" = true ]; then
-        cp -r "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}" "${client_crypto_dir}/organizations/"
-        print_status $GREEN "✓ Copied ${ORG2_NAME} crypto materials"
+    # Reenroll admin user to ensure certificates exist
+    print_status $YELLOW "Reenrolling admin users to ensure certificates exist..."
+
+    # Create temporary directory for CA bootstrap admin
+    local ca_bootstrap_dir="/tmp/fabric_ca_bootstrap"
+    rm -rf "$ca_bootstrap_dir"
+    mkdir -p "$ca_bootstrap_dir"
+
+    # Enroll CA bootstrap admin (Org1)
+    if [ "$DEPLOY_ORG1" = true ]; then
+        print_status $YELLOW "Enrolling Org1 CA bootstrap admin..."
+        if FABRIC_CA_CLIENT_HOME="$ca_bootstrap_dir/org1" fabric-ca-client enroll -u http://ca.${ORG1_DOMAIN}-admin:ca.${ORG1_DOMAIN}-adminpw@localhost:${CA_ORG1_PORT} > /dev/null 2>&1; then
+            print_status $GREEN "✓ Enrolled Org1 CA bootstrap admin"
+
+            # Enroll user1 client identity using bootstrap admin credentials
+            print_status $YELLOW "Enrolling user1 client identity..."
+            local user1_msp_dir="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/user1.${ORG1_DOMAIN}"
+            if FABRIC_CA_CLIENT_HOME="$user1_msp_dir" fabric-ca-client enroll -u http://ca.${ORG1_DOMAIN}-admin:ca.${ORG1_DOMAIN}-adminpw@localhost:${CA_ORG1_PORT} > /dev/null 2>&1; then
+                print_status $GREEN "✓ Enrolled user1 client identity"
+            else
+                print_status $YELLOW "Warning: Failed to enroll user1, attempting to use existing certificates..."
+            fi
+        else
+            print_status $YELLOW "Warning: Failed to enroll Org1 CA bootstrap admin, attempting to use existing certificates..."
+        fi
+    fi
+
+    # Create crypto directory structure
+    local client_crypto_dir="${PROJECT_ROOT}/fabric-network/client/crypto"
+    mkdir -p "${client_crypto_dir}/signcerts"
+    mkdir -p "${client_crypto_dir}/keystore"
+
+    # Copy TLS CA certificate (from peer's TLS CA)
+    if [ "$DEPLOY_ORG1" = true ]; then
+        # Copy peer TLS CA certificate
+        cp "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt" \
+           "${client_crypto_dir}/ca.crt"
+        print_status $GREEN "✓ Copied TLS CA certificate"
+
+        # Copy user certificate and private key from user1 (client identity)
+        local user1_msp_dir="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/user1.${ORG1_DOMAIN}/msp"
+        if [ -f "${user1_msp_dir}/signcerts/cert.pem" ]; then
+            cp "${user1_msp_dir}/signcerts/cert.pem" "${client_crypto_dir}/signcerts/cert.pem"
+            print_status $GREEN "✓ Copied ${ORG1_NAME} user certificate (user1)"
+        else
+            print_status $RED "✗ User certificate not found at ${user1_msp_dir}/signcerts/cert.pem"
+            exit 1
+        fi
+
+        # Copy private key
+        if [ -d "${user1_msp_dir}/keystore" ]; then
+            local key_file=$(find "${user1_msp_dir}/keystore" -name "*_sk" | head -n 1)
+            if [ -n "$key_file" ]; then
+                cp "$key_file" "${client_crypto_dir}/keystore/priv_sk"
+                print_status $GREEN "✓ Copied ${ORG1_NAME} user private key (user1)"
+            else
+                print_status $RED "✗ Private key not found in ${user1_msp_dir}/keystore"
+                exit 1
+            fi
+        else
+            print_status $RED "✗ Keystore directory not found at ${user1_msp_dir}/keystore"
+            exit 1
+        fi
+
+    # Copy MSP config file
+    if [ -f "${user1_msp_dir}/config.yaml" ]; then
+        cp "${user1_msp_dir}/config.yaml" "${client_crypto_dir}/config.yaml"
+        print_status $GREEN "✓ Copied ${ORG1_NAME} MSP config (user1)"
+    else
+        print_status $RED "✗ MSP config not found at ${user1_msp_dir}/config.yaml"
+        exit 1
     fi
 
     # Create connection profile (simplified version)
@@ -128,7 +192,7 @@ setup_crypto
 # Build the client application
 print_status $YELLOW "Building client application..."
 
-cd "${PROJECT_ROOT}/client"
+cd "${PROJECT_ROOT}/fabric-network/client"
 
 # Download dependencies
 print_status $YELLOW "Downloading Go dependencies..."
@@ -165,17 +229,17 @@ fi
 print_status $GREEN "✓ Client application built successfully"
 
 # Set environment variables for the client
-export WALLET_PATH="${PROJECT_ROOT}/client/wallet"
+export WALLET_PATH="${PROJECT_ROOT}/fabric-network/client/wallet"
 export CHANNEL_ID="${CHANNEL_NAME}"
 export CHAINCODE_ID="${CHAINCODE_NAME}"
 export SERVER_PORT="${CLIENT_PORT}"
 export GIN_MODE="${CLIENT_MODE}"
-export TLS_CERT_PATH="${PROJECT_ROOT}/client/crypto"
+export TLS_CERT_PATH="${PROJECT_ROOT}/fabric-network/client/crypto"
 export PEER_ENDPOINT="localhost:${PEER0_ORG1_PORT}"
 export GATEWAY_PEER="peer0.${ORG1_DOMAIN}"
 export MSP_ID="${ORG1_NAME}"
-export USER_ID="appUser"
-export CONNECTION_PROFILE="${PROJECT_ROOT}/client/crypto/connection-profile.yaml"
+export USER_ID="user1"
+export CONNECTION_PROFILE="${PROJECT_ROOT}/fabric-network/client/crypto/connection-profile.yaml"
 export ORG_NAME="Org1"
 
 # Create wallet directory
@@ -311,7 +375,7 @@ echo "  pkill -f fabric-client"
 echo ""
 
 # Create a quick start script
-cat > "${PROJECT_ROOT}/client/start.sh" << 'EOF'
+cat > "${PROJECT_ROOT}/fabric-network/client/start.sh" << 'EOF'
 #!/bin/bash
 # Quick start script for Fabric Client
 
@@ -335,10 +399,10 @@ export ORG_NAME="Org1"
 ./fabric-client
 EOF
 
-chmod +x "${PROJECT_ROOT}/client/start.sh"
+chmod +x "${PROJECT_ROOT}/fabric-network/client/start.sh"
 
 # Create a test script
-cat > "${PROJECT_ROOT}/client/test-api.sh" << 'EOF'
+cat > "${PROJECT_ROOT}/fabric-network/client/test-api.sh" << 'EOF'
 #!/bin/bash
 # Test script for Fabric Client API
 
@@ -391,12 +455,12 @@ echo ""
 echo "=== API Testing Complete ==="
 EOF
 
-chmod +x "${PROJECT_ROOT}/client/test-api.sh"
+chmod +x "${PROJECT_ROOT}/fabric-network/client/test-api.sh"
 
 print_status $GREEN "=== Client Application Started Successfully ==="
 print_status $YELLOW "Quick start scripts created:"
-echo "  ${PROJECT_ROOT}/client/start.sh - Start the client application"
-echo "  ${PROJECT_ROOT}/client/test-api.sh - Test the API endpoints"
+echo "  ${PROJECT_ROOT}/fabric-network/client/start.sh - Start the client application"
+echo "  ${PROJECT_ROOT}/fabric-network/client/test-api.sh - Test the API endpoints"
 echo ""
 print_status $GREEN "Your Hyperledger Fabric network is now ready!"
 print_status $YELLOW "Next steps:"
