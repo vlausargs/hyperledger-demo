@@ -371,7 +371,7 @@ fi
 # Display useful commands
 print_status $YELLOW "=== Useful Commands ==="
 echo "  Query all assets:"
-echo "    docker exec peer0.${ORG1_DOMAIN} -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"GetAllAssets\"]}' --tls --cafile /etc/hyperledger/fabric/tls/ca.crt"
+echo "    docker exec -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp peer0.${ORG1_DOMAIN} peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"GetAllAssets\"]}' --tls --cafile /etc/hyperledger/fabric/tls/ca.crt"
 echo ""
 echo "  Create asset:"
 echo "    docker exec peer0.${ORG1_DOMAIN} peer chaincode invoke -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"CreateAsset\",\"asset7\",\"purple\",20,\"Owner\",800]}' --tls --cafile /etc/hyperledger/fabric/tls/ca.crt --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} --tlsRootCertFiles /etc/hyperledger/fabric/tls/ca.crt --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT} --tlsRootCertFiles /etc/hyperledger/fabric/org2-tls-ca.crt"

@@ -128,6 +128,7 @@ services:
       - ${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls:/etc/hyperledger/fabric/tls
       - ${PROJECT_ROOT}/config/channel-artifacts:/etc/hyperledger/fabric/channel-artifacts
       - ${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp:/etc/hyperledger/fabric/admin-msp
+      - ${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/user1.${org_domain}/msp:/etc/hyperledger/fabric/client-msp
       - ${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/users/ca-admin.${ORDERER_DOMAIN}/msp:/etc/hyperledger/fabric/orderer-admin-msp
       - ${peer_name}.${org_domain}:/var/hyperledger/production
     ports:
