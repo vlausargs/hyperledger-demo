@@ -1,0 +1,213 @@
+# ---------------------------------------------------------------------------
+#   Copyright IBM Corp. 2014, 2017 All Rights Reserved
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+#   Section: Organizations
+# ---------------------------------------------------------------------------
+Organizations:
+
+    # ---------------------------------------------------------------------------
+    #   Orderer Org
+    # ---------------------------------------------------------------------------
+    - &OrdererOrg
+        Name: OrdererMSP
+        ID: OrdererMSP
+        MSPDir: /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('OrdererMSP.member')"
+            Writers:
+                Type: Signature
+                Rule: "OR('OrdererMSP.member')"
+            Admins:
+                Type: Signature
+                Rule: "OR('OrdererMSP.admin')"
+        OrdererEndpoints:
+            - orderer1.orderer.example.com:7050
+
+    # ---------------------------------------------------------------------------
+    #   Peer Organization 1
+    # ---------------------------------------------------------------------------
+    - &Org1
+        Name: Org1MSP
+        ID: Org1MSP
+        MSPDir: /home/valos/workspace/myindo/hlf-demo/organizations/peerOrganizations/org1.example.com/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('Org1MSP.admin', 'Org1MSP.peer', 'Org1MSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('Org1MSP.admin', 'Org1MSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('Org1MSP.admin')"
+            Endorsement:
+                Type: Signature
+                Rule: "OR('Org1MSP.member')"
+        AnchorPeers:
+            - Host: peer0.org1.example.com
+              Port: 8051
+
+    # ---------------------------------------------------------------------------
+    #   Peer Organization 2
+    # ---------------------------------------------------------------------------
+    - &Org2
+        Name: Org2MSP
+        ID: Org2MSP
+        MSPDir: /home/valos/workspace/myindo/hlf-demo/organizations/peerOrganizations/org2.example.com/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('Org2MSP.admin', 'Org2MSP.peer', 'Org2MSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('Org2MSP.admin', 'Org2MSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('Org2MSP.admin')"
+            Endorsement:
+                Type: Signature
+                Rule: "OR('Org2MSP.member')"
+        AnchorPeers:
+            - Host: peer0.org2.example.com
+              Port: 9051
+
+# ---------------------------------------------------------------------------
+#   Capabilities
+# ---------------------------------------------------------------------------
+Capabilities:
+    Channel: &ChannelCapabilities
+        V2_0: true
+    Orderer: &OrdererCapabilities
+        V2_0: true
+    Application: &ApplicationCapabilities
+        V2_0: true
+
+# ---------------------------------------------------------------------------
+#   Application
+# ---------------------------------------------------------------------------
+Application: &ApplicationDefaults
+    Organizations:
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+        LifecycleEndorsement:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Endorsement"
+        Endorsement:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Endorsement"
+    Capabilities:
+        <<: *ApplicationCapabilities
+
+# ---------------------------------------------------------------------------
+#   Orderer
+# ---------------------------------------------------------------------------
+Orderer: &OrdererDefaults
+    OrdererType: etcdraft
+    Addresses:
+        - orderer1.orderer.example.com:7050
+    BatchTimeout: 2s
+    BatchSize:
+        MaxMessageCount: 10
+        AbsoluteMaxBytes: 99 MB
+        PreferredMaxBytes: 512 KB
+    Organizations:
+    EtcdRaft:
+        Consenters:
+            - Host: orderer1.orderer.example.com
+              Port: 7050
+              ClientTLSCert: /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/tls/server.crt
+              ServerTLSCert: /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/orderers/orderer1.orderer.example.com/tls/server.crt
+        Options:
+            TickInterval: 500ms
+            ElectionTick: 10
+            HeartbeatTick: 1
+            MaxInflightBlocks: 5
+            SnapshotIntervalSize: 16 MB
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+        BlockValidation:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+    Capabilities:
+        <<: *OrdererCapabilities
+
+# ---------------------------------------------------------------------------
+#   Channel
+# ---------------------------------------------------------------------------
+Channel: &ChannelDefaults
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+    Capabilities:
+        <<: *ChannelCapabilities
+
+# ---------------------------------------------------------------------------
+#   Profiles
+# ---------------------------------------------------------------------------
+Profiles:
+
+    # ---------------------------------------------------------------------------
+    #   TwoOrgsOrdererGenesis
+    # ---------------------------------------------------------------------------
+    TwoOrgsOrdererGenesis:
+        <<: *ChannelDefaults
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+        Consortiums:
+            SampleConsortium:
+                Organizations:
+                    - *Org1
+                    - *Org2
+
+    # ---------------------------------------------------------------------------
+    #   TwoOrgsChannel
+    # ---------------------------------------------------------------------------
+    TwoOrgsChannel:
+        Consortium: SampleConsortium
+        <<: *ChannelDefaults
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+                - *Org2
