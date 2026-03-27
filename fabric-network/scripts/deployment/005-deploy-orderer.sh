@@ -188,7 +188,7 @@ fi
 
 # Verify orderer status
 print_status $YELLOW "Verifying orderer status..."
-
+sleep 10;
 if docker exec orderer1.${ORDERER_DOMAIN} orderer version 2>&1 | grep -q "Version:"; then
     orderer_version=$(docker exec orderer1.${ORDERER_DOMAIN} orderer version | grep "Version:" | cut -d: -f2 | xargs)
     print_status $GREEN "✓ Orderer is running (Version: $orderer_version)"

@@ -151,6 +151,23 @@ register_identity() {
     fi
 }
 
+# Function to get external host based on organization domain
+get_external_host() {
+    local org_type=$1
+    local org_domain=$2
+
+    # Map org domains to their external host variables
+    if [ "${org_domain}" = "${ORDERER_DOMAIN}" ]; then
+        echo "${ORDERER_EXTERNAL_HOST}"
+    elif [ "${org_domain}" = "${ORG1_DOMAIN}" ]; then
+        echo "${PEER0_ORG1_EXTERNAL_HOST}"
+    elif [ "${org_domain}" = "${ORG2_DOMAIN}" ]; then
+        echo "${PEER0_ORG2_EXTERNAL_HOST}"
+    else
+        echo ""
+    fi
+}
+
 # Function to enroll identity
 enroll_identity() {
     local ca_name=$1
@@ -164,7 +181,16 @@ enroll_identity() {
     local identity_dir="${PROJECT_ROOT}/organizations/${org_type}Organizations/${org_domain}/${identity_type}s/${enrollment_id}.${org_domain}"
     local msp_dir="${identity_dir}/msp"
 
-    print_status $YELLOW "Enrolling identity: ${enrollment_id}"
+    # Get external host to include in CSR hosts
+    local external_host=$(get_external_host "${org_type}" "${org_domain}")
+
+    # Build CSR hosts list
+    local csr_hosts="${enrollment_id}.${org_domain},localhost"
+    if [ -n "${external_host}" ]; then
+        csr_hosts="${csr_hosts},${external_host}"
+    fi
+
+    print_status $YELLOW "Enrolling identity: ${enrollment_id} with CSR hosts: ${csr_hosts}"
 
     # Clean up existing enrollment if it exists
     rm -rf "${identity_dir}"
@@ -174,7 +200,7 @@ enroll_identity() {
     fabric-ca-client enroll \
         -u "http://${enrollment_id}:${enrollment_secret}@${ca_url}" \
         -M "${msp_dir}" \
-        --csr.hosts "${enrollment_id}.${org_domain},localhost" \
+        --csr.hosts "${csr_hosts}" \
         --caname "${ca_name}"
 
     # Create config.yaml for MSP
@@ -199,7 +225,7 @@ EOF
 
     # Generate TLS certificates for peer identities
     if [ "${identity_type}" = "peer" ] || [ "${identity_type}" = "orderer" ]; then
-        print_status $YELLOW "Enrolling TLS certificate for ${enrollment_id}..."
+        print_status $YELLOW "Enrolling TLS certificate for ${enrollment_id} with CSR hosts: ${csr_hosts}..."
 
         local tls_dir="${identity_dir}/tls"
 
@@ -209,7 +235,7 @@ EOF
             -u "http://${enrollment_id}:${enrollment_secret}@${ca_url}" \
             -M "${tls_dir}" \
             --enrollment.profile tls \
-            --csr.hosts "${enrollment_id}.${org_domain},localhost" \
+            --csr.hosts "${csr_hosts}" \
             --caname "${ca_name}"
 
         # Create TLS file structure in expected format
@@ -471,21 +497,21 @@ if [ "$DEPLOY_ORG1" = true ] && [ "$DEPLOY_ORG2" = true ]; then
     print_status $GREEN "✓ TLS CA certificates distributed between organizations"
 fi
 
-# Also distribute Orderer TLS CA to peer organizations for TLS communication with orderer
-if [ "$DEPLOY_ORDERER" = true ]; then
-    if [ "$DEPLOY_ORG1" = true ]; then
-        # Copy Orderer TLS CA to Org1 peers
-        print_status $YELLOW "Distributing Orderer TLS CA certificate to Org1 peers..."
-        orderer_tls_ca="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORDERER_PORT}-${CA_ORDERER_NAME}.pem"
-        copy_tls_ca_to_peer "${orderer_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/tlscacerts" "Orderer"
-    fi
+# # Also distribute Orderer TLS CA to peer organizations for TLS communication with orderer
+# if [ "$DEPLOY_ORDERER" = true ]; then
+#     if [ "$DEPLOY_ORG1" = true ]; then
+#         # Copy Orderer TLS CA to Org1 peers
+#         print_status $YELLOW "Distributing Orderer TLS CA certificate to Org1 peers..."
+#         orderer_tls_ca="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORDERER_PORT}-${CA_ORDERER_NAME}.pem"
+#         copy_tls_ca_to_peer "${orderer_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/tlscacerts" "Orderer"
+#     fi
 
-    if [ "$DEPLOY_ORG2" = true ]; then
-        # Copy Orderer TLS CA to Org2 peers
-        print_status $YELLOW "Distributing Orderer TLS CA certificate to Org2 peers..."
-        orderer_tls_ca="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORDERER_PORT}-${CA_ORDERER_NAME}.pem"
-        copy_tls_ca_to_peer "${orderer_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/tlscacerts" "Orderer"
-    fi
+#     if [ "$DEPLOY_ORG2" = true ]; then
+#         # Copy Orderer TLS CA to Org2 peers
+#         print_status $YELLOW "Distributing Orderer TLS CA certificate to Org2 peers..."
+#         orderer_tls_ca="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORDERER_PORT}-${CA_ORDERER_NAME}.pem"
+#         copy_tls_ca_to_peer "${orderer_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/tlscacerts" "Orderer"
+#     fi
 fi
 
 # Regenerate ca.crt files for all peers to include all distributed TLS CA certificates
