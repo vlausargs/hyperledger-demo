@@ -44,11 +44,11 @@ echo ""
 # Verify prerequisites
 print_status $YELLOW "Verifying prerequisites..."
 
-# Check if orderer is running
-if ! docker ps | grep -q "orderer1.${ORDERER_DOMAIN}"; then
-    print_status $RED "Error: Orderer is not running. Please run script 005 first."
-    exit 1
-fi
+# # Check if orderer is running
+# if ! docker ps | grep -q "orderer1.${ORDERER_DOMAIN}"; then
+#     print_status $RED "Error: Orderer is not running. Please run script 005 first."
+#     exit 1
+# fi
 
 # Check if channel configuration transaction exists
 if [ ! -f "${PROJECT_ROOT}/config/channel-artifacts/${CHANNEL_NAME}.tx" ]; then
