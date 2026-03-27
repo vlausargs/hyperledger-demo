@@ -84,17 +84,6 @@ type HTTPOptions struct {
 	Verify bool `yaml:"verify"`
 }
 
-// Config holds the gateway configuration
-type Config struct {
-	WalletPath   string
-	ChannelID    string
-	ChaincodeID  string
-	TLSCertPath  string
-	PeerEndpoint string
-	MSPID        string
-	UserID       string
-}
-
 // NewGateway creates a new Fabric Gateway connection using a connection profile
 func NewGateway(channelID, chaincodeID, walletPath, tlsCertPath, connectionProfilePath string) (*Gateway, error) {
 	logger := log.New(os.Stdout, "[Fabric-Gateway] ", log.LstdFlags|log.Lshortfile)

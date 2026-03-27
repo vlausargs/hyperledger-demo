@@ -1,5 +1,7 @@
 /backups
 /organizations
+/docker-compose
+/config/channel-artifacts
 *.block
 *.tx
 *.tar.gz

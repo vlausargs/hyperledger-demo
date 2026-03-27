@@ -209,12 +209,7 @@ export CHAINCODE_ID="${CHAINCODE_NAME}"
 export SERVER_PORT="${CLIENT_PORT}"
 export GIN_MODE="${CLIENT_MODE}"
 export TLS_CERT_PATH="${PROJECT_ROOT}/fabric-network/client/crypto"
-export PEER_ENDPOINT="peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT}"
-export GATEWAY_PEER="peer0.${ORG1_DOMAIN}"
-export MSP_ID="${ORG1_NAME}"
-export USER_ID="user1"
 export CONNECTION_PROFILE="${PROJECT_ROOT}/fabric-network/client/crypto/connection-profile.yaml"
-export ORG_NAME="Org1"
 
 # Create wallet directory
 mkdir -p "$WALLET_PATH"
@@ -362,12 +357,7 @@ export CHAINCODE_ID="basic"
 export SERVER_PORT="8080"
 export GIN_MODE="debug"
 export TLS_CERT_PATH="./crypto"
-export PEER_ENDPOINT="peer0.org1.example.com:8051"
-export GATEWAY_PEER="peer0.org1.example.com"
-export MSP_ID="Org1MSP"
-export USER_ID="user1"
 export CONNECTION_PROFILE="./crypto/connection-profile.yaml"
-export ORG_NAME="Org1"
 
 # Start application
 ./fabric-client

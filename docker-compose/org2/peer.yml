@@ -69,12 +69,12 @@ services:
     command: sh -c "apk add --no-cache curl docker-cli && peer node start"
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
-      - /home/myindo/workspace/myindo/hyperledger-demo/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/msp:/etc/hyperledger/fabric/msp
-      - /home/myindo/workspace/myindo/hyperledger-demo/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls:/etc/hyperledger/fabric/tls
-      - /home/myindo/workspace/myindo/hyperledger-demo/config/channel-artifacts:/etc/hyperledger/fabric/channel-artifacts
-      - /home/myindo/workspace/myindo/hyperledger-demo/organizations/peerOrganizations/org2.example.com/users/admin.org2.example.com/msp:/etc/hyperledger/fabric/admin-msp
-      - /home/myindo/workspace/myindo/hyperledger-demo/organizations/peerOrganizations/org2.example.com/users/user1.org2.example.com/msp:/etc/hyperledger/fabric/client-msp
-      - /home/myindo/workspace/myindo/hyperledger-demo/organizations/ordererOrganizations/orderer.example.com/users/ca-admin.orderer.example.com/msp:/etc/hyperledger/fabric/orderer-admin-msp
+      - /home/valos/workspace/myindo/hlf-demo/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/msp:/etc/hyperledger/fabric/msp
+      - /home/valos/workspace/myindo/hlf-demo/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls:/etc/hyperledger/fabric/tls
+      - /home/valos/workspace/myindo/hlf-demo/config/channel-artifacts:/etc/hyperledger/fabric/channel-artifacts
+      - /home/valos/workspace/myindo/hlf-demo/organizations/peerOrganizations/org2.example.com/users/admin.org2.example.com/msp:/etc/hyperledger/fabric/admin-msp
+      - /home/valos/workspace/myindo/hlf-demo/organizations/peerOrganizations/org2.example.com/users/user1.org2.example.com/msp:/etc/hyperledger/fabric/client-msp
+      - /home/valos/workspace/myindo/hlf-demo/organizations/ordererOrganizations/orderer.example.com/users/ca-admin.orderer.example.com/msp:/etc/hyperledger/fabric/orderer-admin-msp
       - peer0.org2.example.com:/var/hyperledger/production
     ports:
       - 9051:9051

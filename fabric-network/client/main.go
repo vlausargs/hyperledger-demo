@@ -23,8 +23,6 @@ const (
 	defaultChaincodeID       = "basic"
 	defaultServerPort        = "8080"
 	defaultTLSCertPath       = "./crypto"
-	defaultPeerEndpoint      = "localhost:8051"
-	defaultGatewayPeer       = "peer0.org1.example.com"
 	defaultConnectionProfile = "./crypto/connection-profile.yaml"
 )
 
@@ -159,12 +157,7 @@ type Config struct {
 	Port              string
 	Mode              string
 	TLSCertPath       string
-	PeerEndpoint      string
-	GatewayPeer       string
-	MSPID             string
-	UserID            string
 	ConnectionProfile string
-	OrgName           string
 }
 
 // loadConfig loads configuration from environment variables
@@ -176,12 +169,7 @@ func loadConfig() (*Config, error) {
 		Port:              getEnv("SERVER_PORT", defaultServerPort),
 		Mode:              getEnv("GIN_MODE", "debug"),
 		TLSCertPath:       getEnv("TLS_CERT_PATH", defaultTLSCertPath),
-		PeerEndpoint:      getEnv("PEER_ENDPOINT", defaultPeerEndpoint),
-		GatewayPeer:       getEnv("GATEWAY_PEER", defaultGatewayPeer),
-		MSPID:             getEnv("MSP_ID", "Org1MSP"),
-		UserID:            getEnv("USER_ID", "appUser"),
 		ConnectionProfile: getEnv("CONNECTION_PROFILE", defaultConnectionProfile),
-		OrgName:           getEnv("ORG_NAME", "Org1"),
 	}
 
 	// Validate required configuration
@@ -190,9 +178,6 @@ func loadConfig() (*Config, error) {
 	}
 	if config.ChaincodeID == "" {
 		return nil, fmt.Errorf("CHAINCODE_ID is required")
-	}
-	if config.MSPID == "" {
-		return nil, fmt.Errorf("MSP_ID is required")
 	}
 
 	return config, nil
