@@ -5,3 +5,4 @@
 *.block
 *.tx
 *.tar.gz
+.env
