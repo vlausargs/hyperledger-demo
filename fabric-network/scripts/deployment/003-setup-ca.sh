@@ -476,14 +476,14 @@ if [ "$DEPLOY_ORDERER" = true ]; then
     if [ "$DEPLOY_ORG1" = true ]; then
         # Copy Orderer TLS CA to Org1 peers
         print_status $YELLOW "Distributing Orderer TLS CA certificate to Org1 peers..."
-        orderer_tls_ca="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/tlscacerts/tls-localhost-${ORDERER_PORT}-ca-${ORDERER_NAME}.pem"
+        orderer_tls_ca="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORDERER_PORT}-${CA_ORDERER_NAME}.pem"
         copy_tls_ca_to_peer "${orderer_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/tlscacerts" "Orderer"
     fi
 
     if [ "$DEPLOY_ORG2" = true ]; then
         # Copy Orderer TLS CA to Org2 peers
         print_status $YELLOW "Distributing Orderer TLS CA certificate to Org2 peers..."
-        orderer_tls_ca="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/tlscacerts/tls-localhost-${ORDERER_PORT}-ca-${ORDERER_NAME}.pem"
+        orderer_tls_ca="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORDERER_PORT}-${CA_ORDERER_NAME}.pem"
         copy_tls_ca_to_peer "${orderer_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/tlscacerts" "Orderer"
     fi
 fi
