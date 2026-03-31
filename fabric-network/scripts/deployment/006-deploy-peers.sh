@@ -19,8 +19,12 @@ print_status() {
 }
 
 # Load environment variables
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+# Load Fabric environment helper functions
+source "${SCRIPT_DIR}/../helpers/fabric-env.sh"
 
 if [ ! -f "${PROJECT_ROOT}/.env" ]; then
     print_status $RED "Error: .env file not found at ${PROJECT_ROOT}/.env"
@@ -241,9 +245,14 @@ deploy_peer() {
     local attempt=1
 
     while [ $attempt -le $max_attempts ]; do
-        if docker exec ${peer_name}.${org_domain} peer version > /dev/null 2>&1; then
-            print_status $GREEN "✓ ${peer_name}.${org_domain} is ready"
-            break
+        # Check if container is running and healthy
+        if docker ps | grep -q "${peer_name}.${org_domain}" && \
+           docker inspect ${peer_name}.${org_domain} | grep -q '"Status": "healthy'; then
+            # Verify peer is responsive by checking metrics endpoint
+            if curl -s http://localhost:${peer_metrics_port}/metrics > /dev/null 2>&1; then
+                print_status $GREEN "✓ ${peer_name}.${org_domain} is ready"
+                break
+            fi
         fi
 
         echo "  Attempt $attempt/$max_attempts: Waiting for peer..."
@@ -260,12 +269,20 @@ deploy_peer() {
     # Verify peer status
     print_status $YELLOW "Verifying ${peer_name}.${org_domain} status..."
 
-    if docker exec ${peer_name}.${org_domain} peer version 2>&1 | grep -q "Version:"; then
-        local peer_version=$(docker exec ${peer_name}.${org_domain} peer version | grep "Version:" | cut -d: -f2 | xargs)
-        print_status $GREEN "✓ ${peer_name}.${org_domain} is running (Version: $peer_version)"
+    # Check if container is running
+    if docker ps | grep -q "${peer_name}.${org_domain}"; then
+        print_status $GREEN "✓ ${peer_name}.${org_domain} container is running"
     else
-        print_status $RED "✗ Failed to verify ${peer_name}.${org_domain} version"
+        print_status $RED "✗ ${peer_name}.${org_domain} container is not running"
         return 1
+    fi
+
+    # Verify local binary availability
+    if "${FABRIC_BIN_PATH}/peer" version 2>&1 | grep -q "Version:"; then
+        local peer_version=$("${FABRIC_BIN_PATH}/peer" version | grep "Version:" | cut -d: -f2 | xargs)
+        print_status $GREEN "✓ Peer binary available (Version: $peer_version)"
+    else
+        print_status $YELLOW "⚠ Peer binary not found at ${FABRIC_BIN_PATH}"
     fi
 
     # Check CouchDB connection
@@ -315,10 +332,10 @@ fi
 
 sleep 20;
 if [ "$DEPLOY_ORG1" = true ]; then
-    # Check if orderer is listening on the correct ports
+    # Check if peer is listening on the correct ports
     print_status $YELLOW "Checking ${ORG1_COMMON_NAME} network connectivity..."
 
-    if docker exec ${ORG1_COMMON_NAME} netstat -tlnp 2>&1 | grep -q ":${PEER0_ORG1_PORT}"; then
+    if netstat -tlnp 2>&1 | grep -q ":${PEER0_ORG1_PORT}" || ss -tlnp 2>&1 | grep -q ":${PEER0_ORG1_PORT}"; then
         print_status $GREEN "✓ ${ORG1_COMMON_NAME} listening on port ${PEER0_ORG1_PORT}"
     else
         print_status $RED "✗ ${ORG1_COMMON_NAME} not listening on port ${PEER0_ORG1_PORT}"
@@ -326,10 +343,10 @@ if [ "$DEPLOY_ORG1" = true ]; then
     fi
 fi
 if [ "$DEPLOY_ORG2" = true ]; then
-    # Check if orderer is listening on the correct ports
+    # Check if peer is listening on the correct ports
     print_status $YELLOW "Checking ${ORG2_COMMON_NAME} network connectivity..."
 
-    if docker exec ${ORG2_COMMON_NAME} netstat -tlnp 2>&1 | grep -q ":${PEER0_ORG2_PORT}"; then
+    if netstat -tlnp 2>&1 | grep -q ":${PEER0_ORG2_PORT}" || ss -tlnp 2>&1 | grep -q ":${PEER0_ORG2_PORT}"; then
         print_status $GREEN "✓ ${ORG2_COMMON_NAME} listening on port ${PEER0_ORG2_PORT}"
     else
         print_status $RED "✗ ${ORG2_COMMON_NAME} not listening on port ${PEER0_ORG2_PORT}"
@@ -369,7 +386,11 @@ if [ "$DEPLOY_ORG1" = true ]; then
     echo "  Org1 Peer:"
     echo "    View logs: docker logs -f peer0.${ORG1_DOMAIN}"
     echo "    Check status: docker ps | grep peer0.${ORG1_DOMAIN}"
-    echo "    Execute command: docker exec -it peer0.${ORG1_DOMAIN} bash"
+    echo "    Execute peer command locally:"
+    echo "      export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
+    echo "      export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
+    echo "      export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
+    echo "      ${FABRIC_BIN_PATH}/peer <command>"
     echo "    View CouchDB: curl http://localhost:${COUCHDB_ORG1_PORT}/_utils"
     echo ""
 fi
@@ -378,10 +399,15 @@ if [ "$DEPLOY_ORG2" = true ]; then
     echo "  Org2 Peer:"
     echo "    View logs: docker logs -f peer0.${ORG2_DOMAIN}"
     echo "    Check status: docker ps | grep peer0.${ORG2_DOMAIN}"
-    echo "    Execute command: docker exec -it peer0.${ORG2_DOMAIN} bash"
+    echo "    Execute peer command locally:"
+    echo "      export CORE_PEER_LOCALMSPID='${ORG2_NAME}'"
+    echo "      export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt'"
+    echo "      export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/users/admin.${ORG2_DOMAIN}/msp'"
+    echo "      ${FABRIC_BIN_PATH}/peer <command>"
     echo "    View CouchDB: curl http://localhost:${COUCHDB_ORG2_PORT}/_utils"
     echo ""
 fi
 
 print_status $GREEN "=== Peer Deployment Completed Successfully ==="
 print_status $YELLOW "Next step: Run 007-create-channel.sh"
+echo ""

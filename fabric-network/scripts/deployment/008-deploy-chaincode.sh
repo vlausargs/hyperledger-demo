@@ -28,6 +28,15 @@ fi
 
 source "${PROJECT_ROOT}/.env"
 
+# Source fabric-env.sh helper script for local binary usage
+source "${PROJECT_ROOT}/fabric-network/scripts/helpers/fabric-env.sh"
+
+# Set FABRIC_CFG_PATH for peer commands
+export FABRIC_CFG_PATH="${FABRIC_CONFIG_PATH}"
+
+# Verify fabric binaries are available
+verify_binaries
+
 # Check deployment flags
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
@@ -112,34 +121,41 @@ package_chaincode_host() {
 
 # Function to install chaincode
 install_chaincode() {
-    local peer_container=$1
+    local org_domain=$1
     local org_name=$2
     local package_file=$3
 
-    print_status $YELLOW "Installing chaincode on ${peer_container}..."
+    print_status $YELLOW "Installing chaincode for ${org_name}..."
 
-    # Install chaincode
-    docker exec -e CORE_PEER_LOCALMSPID="${org_name}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        ${peer_container} \
-        peer lifecycle chaincode install \
-        /etc/hyperledger/fabric/chaincode/${CHAINCODE_NAME}.tar.gz \
+    # Set up environment variables for local peer binary
+    local peer_name="peer0"
+    local msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp"
+    local tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls"
+    local orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+    local local_package_file="${PROJECT_ROOT}/config/channel-artifacts/${CHAINCODE_NAME}.tar.gz"
+
+    # Install chaincode using local peer binary
+    local external_host=$(get_external_host "peer" "${org_domain}")
+    local peer_port=$(get_peer_port "${org_domain}")
+
+    export CORE_PEER_ID="${peer_name}.${org_domain}"
+    export CORE_PEER_ADDRESS="${external_host}:${peer_port}"
+    export CORE_PEER_LOCALMSPID="${org_name}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    "${FABRIC_BIN_PATH}/peer" lifecycle chaincode install \
+        "${local_package_file}" \
         --tls \
-        --cafile /etc/hyperledger/fabric/tls/ca.crt
+        --cafile "${orderer_tls_ca_path}"
 
     if [ $? -eq 0 ]; then
-        print_status $GREEN "✓ Chaincode installed successfully on ${peer_container}"
+        print_status $GREEN "✓ Chaincode installed successfully for ${org_name}"
 
         # Get the package ID
-        local package_id=$(docker exec \
-            -e CORE_PEER_LOCALMSPID="${org_name}" \
-            -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-            -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-            ${peer_container} \
-            peer lifecycle chaincode queryinstalled \
+        local package_id=$("${FABRIC_BIN_PATH}/peer" lifecycle chaincode queryinstalled \
             --tls \
-            --cafile /etc/hyperledger/fabric/tls/ca.crt \
+            --cafile "${orderer_tls_ca_path}" \
             --output json | jq -r ".installed_chaincodes[] | select(.label==\"${CHAINCODE_NAME}_${CHAINCODE_VERSION}\") | .package_id")
 
         if [ -n "$package_id" ]; then
@@ -150,29 +166,40 @@ install_chaincode() {
             return 1
         fi
     else
-        print_status $RED "✗ Failed to install chaincode on ${peer_container}"
+        print_status $RED "✗ Failed to install chaincode for ${org_name}"
         return 1
     fi
 }
 
 # Function to approve chaincode
 approve_chaincode() {
-    local peer_container=$1
+    local org_domain=$1
     local org_name=$2
     local package_id=$3
 
-    print_status $YELLOW "Approving chaincode for ${org_name} on ${peer_container}..."
+    print_status $YELLOW "Approving chaincode for ${org_name}..."
+
+    # Set up environment variables for local peer binary
+    local peer_name="peer0"
+    local msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp"
+    local tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls"
+    local orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
 
     # Query to check if already approved
-    local approved=$(docker exec -e CORE_PEER_LOCALMSPID="${org_name}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        ${peer_container} \
-        peer lifecycle chaincode queryapproved \
+    local external_host=$(get_external_host "peer" "${org_domain}")
+    local peer_port=$(get_peer_port "${org_domain}")
+
+    export CORE_PEER_ID="${peer_name}.${org_domain}"
+    export CORE_PEER_ADDRESS="${external_host}:${peer_port}"
+    export CORE_PEER_LOCALMSPID="${org_name}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    local approved=$("${FABRIC_BIN_PATH}/peer" lifecycle chaincode queryapproved \
         -C ${CHANNEL_NAME} \
         -n ${CHAINCODE_NAME} \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt 2>&1 || echo "not_approved")
+        --cafile "${orderer_tls_ca_path}" 2>&1 || echo "not_approved")
 
     if echo "$approved" | grep -Fq "${package_id}"; then
         print_status $YELLOW "Chaincode already approved for ${org_name}"
@@ -180,11 +207,7 @@ approve_chaincode() {
     fi
 
     # Approve chaincode
-    docker exec -e CORE_PEER_LOCALMSPID="${org_name}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        ${peer_container} \
-        peer lifecycle chaincode approveformyorg \
+    "${FABRIC_BIN_PATH}/peer" lifecycle chaincode approveformyorg \
         -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} \
         --channelID ${CHANNEL_NAME} \
         --name ${CHAINCODE_NAME} \
@@ -192,7 +215,7 @@ approve_chaincode() {
         --package-id "${package_id}" \
         --sequence ${CHAINCODE_SEQUENCE} \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt \
+        --cafile "${orderer_tls_ca_path}" \
         --signature-policy "${CHAINCODE_ENDORSEMENT_POLICY}"
 
     if [ $? -eq 0 ]; then
@@ -207,31 +230,42 @@ approve_chaincode() {
 check_commit_readiness() {
     print_status $YELLOW "Checking commit readiness..."
 
-    local peer_container
+    local org_domain
     local org_name
 
     if [ "$DEPLOY_ORG1" = true ]; then
-        peer_container="peer0.${ORG1_DOMAIN}"
+        org_domain="${ORG1_DOMAIN}"
         org_name="${ORG1_NAME}"
     elif [ "$DEPLOY_ORG2" = true ]; then
-        peer_container="peer0.${ORG2_DOMAIN}"
+        org_domain="${ORG2_DOMAIN}"
         org_name="${ORG2_NAME}"
     else
         print_status $RED "Error: No organization deployed to check commit readiness"
         return 1
     fi
 
-    docker exec -e CORE_PEER_LOCALMSPID="${org_name}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        ${peer_container} \
-        peer lifecycle chaincode checkcommitreadiness \
+    # Set up environment variables for local peer binary
+    local peer_name="peer0"
+    local msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp"
+    local tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls"
+    local orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+
+    local external_host=$(get_external_host "peer" "${org_domain}")
+    local peer_port=$(get_peer_port "${org_domain}")
+
+    export CORE_PEER_ID="${peer_name}.${org_domain}"
+    export CORE_PEER_ADDRESS="${external_host}:${peer_port}"
+    export CORE_PEER_LOCALMSPID="${org_name}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    "${FABRIC_BIN_PATH}/peer" lifecycle chaincode checkcommitreadiness \
         --channelID ${CHANNEL_NAME} \
         --name ${CHAINCODE_NAME} \
         --version ${CHAINCODE_VERSION} \
         --sequence ${CHAINCODE_SEQUENCE} \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt \
+        --cafile "${orderer_tls_ca_path}" \
         --output json | jq '.'
 }
 
@@ -239,53 +273,74 @@ check_commit_readiness() {
 commit_chaincode() {
     print_status $YELLOW "Committing chaincode to channel ${CHANNEL_NAME}..."
 
-    local peer_container
+    local org_domain
     local org_name
-    local org1_tls_cert="/etc/hyperledger/fabric/tls/ca.crt"
-    local org2_tls_cert="/etc/hyperledger/fabric/tls/ca.crt"
+    local org1_tls_cert=""
+    local org2_tls_cert=""
 
-    # Determine which peer to use for committing
+    # Determine which peer to use for committing and set up TLS cert paths
     if [ "$DEPLOY_ORG1" = true ]; then
-        peer_container="peer0.${ORG1_DOMAIN}"
+        org_domain="${ORG1_DOMAIN}"
         org_name="${ORG1_NAME}"
 
-        # Copy Org2's TLS CA certificate to Org1's peer container
-        print_status $YELLOW "Copying Org2 TLS CA certificate to ${peer_container}..."
-        docker exec peer0.${ORG2_DOMAIN} cat /etc/hyperledger/fabric/tls/ca.crt | \
-            docker exec -i ${peer_container} sh -c 'cat > /etc/hyperledger/fabric/org2-tls-ca.crt'
-        org2_tls_cert="/etc/hyperledger/fabric/org2-tls-ca.crt"
+        # Use local paths for TLS CA certificates
+        org1_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt"
+
+        if [ "$DEPLOY_ORG2" = true ]; then
+            org2_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt"
+        fi
     elif [ "$DEPLOY_ORG2" = true ]; then
-        peer_container="peer0.${ORG2_DOMAIN}"
+        org_domain="${ORG2_DOMAIN}"
         org_name="${ORG2_NAME}"
 
-        # Copy Org1's TLS CA certificate to Org2's peer container
-        print_status $YELLOW "Copying Org1 TLS CA certificate to ${peer_container}..."
-        docker exec peer0.${ORG1_DOMAIN} cat /etc/hyperledger/fabric/tls/ca.crt | \
-            docker exec -i ${peer_container} sh -c 'cat > /etc/hyperledger/fabric/org1-tls-ca.crt'
-        org1_tls_cert="/etc/hyperledger/fabric/org1-tls-ca.crt"
+        # Use local paths for TLS CA certificates
+        org2_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt"
+
+        if [ "$DEPLOY_ORG1" = true ]; then
+            org1_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt"
+        fi
     else
         print_status $RED "Error: No organization deployed to commit chaincode"
         return 1
     fi
 
-    # Commit chaincode
-    docker exec -e CORE_PEER_LOCALMSPID="${org_name}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        ${peer_container} \
-        peer lifecycle chaincode commit \
+    # Set up environment variables for local peer binary
+    local peer_name="peer0"
+    local msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp"
+    local tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls"
+    local orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+
+    local external_host=$(get_external_host "peer" "${org_domain}")
+    local peer_port=$(get_peer_port "${org_domain}")
+
+    export CORE_PEER_ID="${peer_name}.${org_domain}"
+    export CORE_PEER_ADDRESS="${external_host}:${peer_port}"
+    export CORE_PEER_LOCALMSPID="${org_name}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    # Build commit command with appropriate peer addresses
+    local commit_cmd="${FABRIC_BIN_PATH}/peer lifecycle chaincode commit \
         -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} \
         --channelID ${CHANNEL_NAME} \
         --name ${CHAINCODE_NAME} \
         --version ${CHAINCODE_VERSION} \
         --sequence ${CHAINCODE_SEQUENCE} \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt \
-        --signature-policy "${CHAINCODE_ENDORSEMENT_POLICY}" \
-        --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} \
-        --tlsRootCertFiles ${org1_tls_cert} \
-        --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT} \
-        --tlsRootCertFiles ${org2_tls_cert}
+        --cafile \"${orderer_tls_ca_path}\" \
+        --signature-policy \"${CHAINCODE_ENDORSEMENT_POLICY}\""
+
+    if [ "$DEPLOY_ORG1" = true ]; then
+        commit_cmd="${commit_cmd} --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT}"
+        commit_cmd="${commit_cmd} --tlsRootCertFiles \"${org1_tls_cert}\""
+    fi
+
+    if [ "$DEPLOY_ORG2" = true ]; then
+        commit_cmd="${commit_cmd} --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT}"
+        commit_cmd="${commit_cmd} --tlsRootCertFiles \"${org2_tls_cert}\""
+    fi
+
+    eval "$commit_cmd"
 
     if [ $? -eq 0 ]; then
         print_status $GREEN "✓ Chaincode committed successfully to channel ${CHANNEL_NAME}"
@@ -299,29 +354,40 @@ commit_chaincode() {
 query_committed() {
     print_status $YELLOW "Querying committed chaincode..."
 
-    local peer_container
+    local org_domain
     local org_name
 
     if [ "$DEPLOY_ORG1" = true ]; then
-        peer_container="peer0.${ORG1_DOMAIN}"
+        org_domain="${ORG1_DOMAIN}"
         org_name="${ORG1_NAME}"
     elif [ "$DEPLOY_ORG2" = true ]; then
-        peer_container="peer0.${ORG2_DOMAIN}"
+        org_domain="${ORG2_DOMAIN}"
         org_name="${ORG2_NAME}"
     else
         print_status $RED "Error: No organization deployed to query committed chaincode"
         return 1
     fi
 
-    docker exec -e CORE_PEER_LOCALMSPID="${org_name}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        ${peer_container} \
-        peer lifecycle chaincode querycommitted \
+    # Set up environment variables for local peer binary
+    local peer_name="peer0"
+    local msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp"
+    local tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls"
+    local orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+
+    local external_host=$(get_external_host "peer" "${org_domain}")
+    local peer_port=$(get_peer_port "${org_domain}")
+
+    export CORE_PEER_ID="${peer_name}.${org_domain}"
+    export CORE_PEER_ADDRESS="${external_host}:${peer_port}"
+    export CORE_PEER_LOCALMSPID="${org_name}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    "${FABRIC_BIN_PATH}/peer" lifecycle chaincode querycommitted \
         --channelID ${CHANNEL_NAME} \
         --name ${CHAINCODE_NAME} \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt \
+        --cafile "${orderer_tls_ca_path}" \
         --output json | jq '.'
 }
 
@@ -338,64 +404,23 @@ fi
 
 print_status $GREEN "✓ Package file: $PACKAGE_FILE"
 
-# Copy packaged chaincode to peer containers
-print_status $YELLOW "Copying chaincode package to peer containers..."
-
-if [ "$DEPLOY_ORG1" = true ]; then
-    print_status $YELLOW "Copying chaincode to Org1 peer..."
-    docker exec "peer0.${ORG1_DOMAIN}" mkdir -p /etc/hyperledger/fabric/chaincode
-    docker cp "${PACKAGE_FILE}" "peer0.${ORG1_DOMAIN}:/etc/hyperledger/fabric/chaincode/${CHAINCODE_NAME}.tar.gz"
-fi
-
-if [ "$DEPLOY_ORG2" = true ]; then
-    print_status $YELLOW "Copying chaincode to Org2 peer..."
-    docker exec "peer0.${ORG2_DOMAIN}" mkdir -p /etc/hyperledger/fabric/chaincode
-    docker cp "${PACKAGE_FILE}" "peer0.${ORG2_DOMAIN}:/etc/hyperledger/fabric/chaincode/${CHAINCODE_NAME}.tar.gz"
-fi
-
-# Copy orderer's TLS CA certificate to peer containers for chaincode operations
-print_status $YELLOW "Copying orderer's TLS CA certificate for chaincode operations..."
-
-if [ "$DEPLOY_ORG1" = true ]; then
-    docker exec orderer1.${ORDERER_DOMAIN} cat /etc/hyperledger/fabric/tls/ca.crt | \
-        docker exec -i peer0.${ORG1_DOMAIN} sh -c 'cat > /etc/hyperledger/fabric/orderer-tls-ca.crt'
-    print_status $GREEN "✓ Orderer TLS CA copied to peer0.${ORG1_DOMAIN}"
-fi
-
-if [ "$DEPLOY_ORG2" = true ]; then
-    docker exec orderer1.${ORDERER_DOMAIN} cat /etc/hyperledger/fabric/tls/ca.crt | \
-        docker exec -i peer0.${ORG2_DOMAIN} sh -c 'cat > /etc/hyperledger/fabric/orderer-tls-ca.crt'
-    print_status $GREEN "✓ Orderer TLS CA copied to peer0.${ORG2_DOMAIN}"
-fi
-
-# Copy cross-org TLS CA certificates for peer-to-peer communication
-print_status $YELLOW "Copying cross-org TLS CA certificates for peer-to-peer communication..."
-
-if [ "$DEPLOY_ORG1" = true ] && [ "$DEPLOY_ORG2" = true ]; then
-    # Copy Org2's peer TLS CA to Org1's peer container
-    docker exec peer0.${ORG2_DOMAIN} cat /etc/hyperledger/fabric/tls/ca.crt | \
-        docker exec -i peer0.${ORG1_DOMAIN} sh -c 'cat > /etc/hyperledger/fabric/org2-peer-tls-ca.crt'
-    print_status $GREEN "✓ Org2 peer TLS CA copied to peer0.${ORG1_DOMAIN}"
-
-    # Copy Org1's peer TLS CA to Org2's peer container
-    docker exec peer0.${ORG1_DOMAIN} cat /etc/hyperledger/fabric/tls/ca.crt | \
-        docker exec -i peer0.${ORG2_DOMAIN} sh -c 'cat > /etc/hyperledger/fabric/org1-peer-tls-ca.crt'
-    print_status $GREEN "✓ Org1 peer TLS CA copied to peer0.${ORG2_DOMAIN}"
-fi
+# Chaincode package is already in local channel-artifacts directory
+print_status $GREEN "✓ Chaincode package available locally at ${PACKAGE_FILE}"
+print_status $YELLOW "Note: No need to copy chaincode package to containers - using local binary"
 
 # Install chaincode on peers
 print_status $YELLOW "=== Installing Chaincode on Peers ==="
 PACKAGE_IDS=()
 
 if [ "$DEPLOY_ORG1" = true ]; then
-    pkg_id=$(install_chaincode "peer0.${ORG1_DOMAIN}" "${ORG1_NAME}" "${CHAINCODE_NAME}.tar.gz")
+    pkg_id=$(install_chaincode "${ORG1_DOMAIN}" "${ORG1_NAME}" "${CHAINCODE_NAME}.tar.gz")
     if [ $? -eq 0 ] && [ -n "$pkg_id" ]; then
         PACKAGE_IDS+=("$pkg_id")
     fi
 fi
 
 if [ "$DEPLOY_ORG2" = true ]; then
-    pkg_id=$(install_chaincode "peer0.${ORG2_DOMAIN}" "${ORG2_NAME}" "${CHAINCODE_NAME}.tar.gz")
+    pkg_id=$(install_chaincode "${ORG2_DOMAIN}" "${ORG2_NAME}" "${CHAINCODE_NAME}.tar.gz")
     if [ $? -eq 0 ] && [ -n "$pkg_id" ]; then
         PACKAGE_IDS+=("$pkg_id")
     fi
@@ -414,11 +439,11 @@ print_status $YELLOW "deployed chaincode with PACKAGE_ID ${PACKAGE_ID}"
 
 # Approve chaincode
 if [ "$DEPLOY_ORG1" = true ]; then
-    approve_chaincode "peer0.${ORG1_DOMAIN}" "${ORG1_NAME}" "$PACKAGE_ID"
+    approve_chaincode "${ORG1_DOMAIN}" "${ORG1_NAME}" "$PACKAGE_ID"
 fi
 
 if [ "$DEPLOY_ORG2" = true ]; then
-    approve_chaincode "peer0.${ORG2_DOMAIN}" "${ORG2_NAME}" "$PACKAGE_ID"
+    approve_chaincode "${ORG2_DOMAIN}" "${ORG2_NAME}" "$PACKAGE_ID"
 fi
 
 check_commit_readiness
@@ -436,36 +461,54 @@ query_committed
 print_status $YELLOW "Initializing chaincode..."
 
 if [ "$DEPLOY_ORG1" = true ]; then
+    # Set up environment variables for local peer binary
+    peer_name="peer0"
+    msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp"
+    tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/${peer_name}.${ORG1_DOMAIN}/tls"
+    orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+    org1_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt"
+    org2_tls_cert=""
+
+    if [ "$DEPLOY_ORG2" = true ]; then
+        org2_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt"
+    fi
+
+    export CORE_PEER_ID="peer0.${ORG1_DOMAIN}"
+    export CORE_PEER_ADDRESS="${PEER0_ORG1_EXTERNAL_HOST}:${PEER0_ORG1_PORT}"
+    export CORE_PEER_LOCALMSPID="${ORG1_NAME}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
     # Check if chaincode is already initialized
-    initialized=$(docker exec -e CORE_PEER_LOCALMSPID="${ORG1_NAME}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        peer0.${ORG1_DOMAIN} \
-        peer chaincode query \
+    initialized=$("${FABRIC_BIN_PATH}/peer" chaincode query \
         -C ${CHANNEL_NAME} \
         -n ${CHAINCODE_NAME} \
         -c '{"Args":["GetAllAssets"]}' \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt 2>&1 || echo "not_initialized")
+        --cafile "${orderer_tls_ca_path}" 2>&1 || echo "not_initialized")
 
     if ! echo "$initialized" | grep -q "Error"; then
         print_status $YELLOW "Chaincode appears to be already initialized"
     else
         print_status $YELLOW "Initializing chaincode ledger..."
 
-        docker exec -e CORE_PEER_LOCALMSPID="${ORG1_NAME}" \
-            -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-            -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-            peer0.${ORG1_DOMAIN} \
-            peer chaincode invoke \
+        # Build invoke command with appropriate peer addresses
+        local invoke_cmd="${FABRIC_BIN_PATH}/peer chaincode invoke \
             -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} \
             -C ${CHANNEL_NAME} \
             -n ${CHAINCODE_NAME} \
-            -c '{"Args":["InitLedger"]}' \
+            -c '{\"Args\":[\"InitLedger\"]}' \
             --tls \
-            --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt \
+            --cafile \"${orderer_tls_ca_path}\" \
             --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} \
-            --tlsRootCertFiles /etc/hyperledger/fabric/tls/ca.crt
+            --tlsRootCertFiles \"${org1_tls_cert}\""
+
+        if [ "$DEPLOY_ORG2" = true ]; then
+            invoke_cmd="${invoke_cmd} --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT}"
+            invoke_cmd="${invoke_cmd} --tlsRootCertFiles \"${org2_tls_cert}\""
+        fi
+
+        eval "$invoke_cmd"
 
         if [ $? -eq 0 ]; then
             print_status $GREEN "✓ Chaincode initialized successfully"
@@ -477,17 +520,30 @@ fi
 
 # Display useful commands
 print_status $YELLOW "=== Useful Commands ==="
+echo ""
 echo "  Query all assets:"
-echo "    docker exec -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp peer0.${ORG1_DOMAIN} peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"GetAllAssets\"]}' --tls --cafile /etc/hyperledger/fabric/tls/ca.crt"
+echo "    export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
+echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
+echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
+echo "    ${FABRIC_BIN_PATH}/peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"GetAllAssets\"]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
 echo ""
 echo "  Create asset:"
-echo "    docker exec -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp peer0.${ORG1_DOMAIN} peer chaincode invoke -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"CreateAsset\",\"asset7\",\"purple\",20,\"Owner\",800]}' --tls --cafile /etc/hyperledger/fabric/tls/ca.crt --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} --tlsRootCertFiles /etc/hyperledger/fabric/tls/ca.crt --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT} --tlsRootCertFiles /etc/hyperledger/fabric/org2-tls-ca.crt"
+echo "    export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
+echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
+echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
+echo "    ${FABRIC_BIN_PATH}/peer chaincode invoke -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"CreateAsset\",\"asset7\",\"purple\",20,\"Owner\",800]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt'"
 echo ""
 echo "  Read asset:"
-echo "    docker exec -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp peer0.${ORG1_DOMAIN} peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"ReadAsset\",\"asset1\"]}' --tls --cafile /etc/hyperledger/fabric/tls/ca.crt"
+echo "    export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
+echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
+echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
+echo "    ${FABRIC_BIN_PATH}/peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"ReadAsset\",\"asset1\"]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
 echo ""
 echo "  Transfer asset:"
-echo "    docker exec -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp peer0.${ORG1_DOMAIN} peer chaincode invoke -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"TransferAsset\",\"asset1\",\"NewOwner\"]}' --tls --cafile /etc/hyperledger/fabric/tls/ca.crt --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} --tlsRootCertFiles /etc/hyperledger/fabric/tls/ca.crt --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT} --tlsRootCertFiles /etc/hyperledger/fabric/org2-tls-ca.crt"
+echo "    export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
+echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
+echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
+echo "    ${FABRIC_BIN_PATH}/peer chaincode invoke -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"TransferAsset\",\"asset1\",\"NewOwner\"]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt'"
 echo ""
 
 print_status $GREEN "=== Chaincode Deployment Completed Successfully ==="

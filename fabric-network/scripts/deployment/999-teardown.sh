@@ -164,6 +164,11 @@ cleanup_artifacts() {
         print_status $GREEN "✓ Channel artifacts removed"
     fi
 
+    # Remove fabric-ca-server config
+    if [ -d "${PROJECT_ROOT}/config/fabric-ca-server" ]; then
+        rm -rf "${PROJECT_ROOT}/config/fabric-ca-server"
+        print_status $GREEN "✓ fabric-ca-server removed"
+    fi
     # Remove system-genesis-block
     if [ -f "${PROJECT_ROOT}/config/system-genesis-block" ]; then
         rm -f "${PROJECT_ROOT}/config/system-genesis-block"

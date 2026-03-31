@@ -110,7 +110,7 @@ if [ "$DEPLOY_ORDERER" = true ]; then
         "${CA_ORDERER_NAME}" \
         "${CA_ORDERER_HOSTNAME}" \
         "${CA_ORDERER_PORT}" \
-        "${POSTGRES_ORDERER_EXTERNAL_HOST}" \
+        "${POSTGRES_ORDERER_HOST}" \
         "${POSTGRES_ORDERER_USER}" \
         "${POSTGRES_ORDERER_PASSWORD}" \
         "${POSTGRES_ORDERER_DB}" \
@@ -129,7 +129,7 @@ if [ "$DEPLOY_ORG1" = true ]; then
         "${CA_ORG1_NAME}" \
         "${CA_ORG1_HOSTNAME}" \
         "${CA_ORG1_PORT}" \
-        "${POSTGRES_ORG1_EXTERNAL_HOST}" \
+        "${POSTGRES_ORG1_HOST}" \
         "${POSTGRES_ORG1_USER}" \
         "${POSTGRES_ORG1_PASSWORD}" \
         "${POSTGRES_ORG1_DB}" \
@@ -148,7 +148,7 @@ if [ "$DEPLOY_ORG2" = true ]; then
         "${CA_ORG2_NAME}" \
         "${CA_ORG2_HOSTNAME}" \
         "${CA_ORG2_PORT}" \
-        "${POSTGRES_ORG2_EXTERNAL_HOST}" \
+        "${POSTGRES_ORG2_HOST}" \
         "${POSTGRES_ORG2_USER}" \
         "${POSTGRES_ORG2_PASSWORD}" \
         "${POSTGRES_ORG2_DB}" \

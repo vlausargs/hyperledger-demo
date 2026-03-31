@@ -29,6 +29,12 @@ fi
 
 source "${PROJECT_ROOT}/.env"
 
+# Load Fabric environment helper functions
+source "${SCRIPT_DIR}/../helpers/fabric-env.sh"
+
+# Set FABRIC_CFG_PATH for peer commands
+export FABRIC_CFG_PATH="${FABRIC_CONFIG_PATH}"
+
 # Check deployment flags
 DEPLOY_ORDERER=${DEPLOY_ORDERER:-true}
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
@@ -63,36 +69,48 @@ create_channel() {
     print_status $YELLOW "Creating channel '${CHANNEL_NAME}'..."
 
     # Determine which org's peer to use for channel creation
+    local org_domain=""
+    local org_name=""
+    local peer_name="peer0"
+
     if [ "$DEPLOY_ORG1" = true ]; then
-        local peer_container="peer0.${ORG1_DOMAIN}"
-        local msp_id="${ORG1_NAME}"
+        org_domain="${ORG1_DOMAIN}"
+        org_name="${ORG1_NAME}"
     elif [ "$DEPLOY_ORG2" = true ]; then
-        local peer_container="peer0.${ORG2_DOMAIN}"
-        local msp_id="${ORG2_NAME}"
+        org_domain="${ORG2_DOMAIN}"
+        org_name="${ORG2_NAME}"
     else
         print_status $RED "Error: No organization deployed to create channel"
         exit 1
     fi
 
-    # Create the channel using orderer's TLS CA certificate and admin identity
-    docker exec -e CORE_PEER_LOCALMSPID="${msp_id}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        ${peer_container} \
-        peer channel create \
+    # Set up paths
+    local msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp"
+    local tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls"
+    local channel_tx_path="${PROJECT_ROOT}/config/channel-artifacts/${CHANNEL_NAME}.tx"
+    local channel_block_path="${PROJECT_ROOT}/config/channel-artifacts/${CHANNEL_NAME}.block"
+    local orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+
+    # Create the channel using local peer binary
+    local external_host=$(get_external_host "peer" "${org_domain}")
+    local peer_port=$(get_peer_port "${org_domain}")
+
+    export CORE_PEER_ID="${peer_name}.${org_domain}"
+    export CORE_PEER_ADDRESS="${external_host}:${peer_port}"
+    export CORE_PEER_LOCALMSPID="${org_name}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    "${FABRIC_BIN_PATH}/peer" channel create \
         -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} \
         -c ${CHANNEL_NAME} \
-        -f /etc/hyperledger/fabric/channel-artifacts/${CHANNEL_NAME}.tx \
-        --outputBlock /etc/hyperledger/fabric/channel-artifacts/${CHANNEL_NAME}.block \
+        -f "${channel_tx_path}" \
+        --outputBlock "${channel_block_path}" \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt
+        --cafile "${orderer_tls_ca_path}"
 
     if [ $? -eq 0 ]; then
         print_status $GREEN "✓ Channel '${CHANNEL_NAME}' created successfully"
-
-        # Fix file permissions and ownership (Docker creates files as root)
-        sudo chown $(id -u):$(id -g) "${PROJECT_ROOT}/config/channel-artifacts/${CHANNEL_NAME}.block"
-        sudo chmod 644 "${PROJECT_ROOT}/config/channel-artifacts/${CHANNEL_NAME}.block"
     else
         print_status $RED "✗ Failed to create channel '${CHANNEL_NAME}'"
         exit 1
@@ -101,49 +119,73 @@ create_channel() {
 
 # Function to join peer to channel
 join_channel() {
-    local peer_container=$1
+    local org_domain=$1
     local org_name=$2
 
-    print_status $YELLOW "Joining ${peer_container} to channel '${CHANNEL_NAME}'..."
+    print_status $YELLOW "Joining peer to channel '${CHANNEL_NAME}'..."
 
-    # Join the peer to the channel
-    docker exec -e CORE_PEER_LOCALMSPID="${org_name}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        ${peer_container} \
-        peer channel join \
-        -b /etc/hyperledger/fabric/channel-artifacts/${CHANNEL_NAME}.block \
+    # Set up paths
+    local peer_name="peer0"
+    local msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp"
+    local tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls"
+    local channel_block_path="${PROJECT_ROOT}/config/channel-artifacts/${CHANNEL_NAME}.block"
+    local orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+
+    # Join the peer to the channel using local peer binary
+    local external_host=$(get_external_host "peer" "${org_domain}")
+    local peer_port=$(get_peer_port "${org_domain}")
+
+    export CORE_PEER_ID="${peer_name}.${org_domain}"
+    export CORE_PEER_ADDRESS="${external_host}:${peer_port}"
+    export CORE_PEER_LOCALMSPID="${org_name}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    "${FABRIC_BIN_PATH}/peer" channel join \
+        -b "${channel_block_path}" \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt
+        --cafile "${orderer_tls_ca_path}"
 
     if [ $? -eq 0 ]; then
-        print_status $GREEN "✓ ${peer_container} joined channel '${CHANNEL_NAME}' successfully"
+        print_status $GREEN "✓ Peer from ${org_domain} joined channel '${CHANNEL_NAME}' successfully"
     else
-        print_status $RED "✗ Failed to join ${peer_container} to channel '${CHANNEL_NAME}'"
+        print_status $RED "✗ Failed to join peer from ${org_domain} to channel '${CHANNEL_NAME}'"
         return 1
     fi
 }
 
 # Function to update anchor peer
 update_anchor_peer() {
-    local peer_container=$1
+    local org_domain=$1
     local org_name=$2
-    local org_domain=$3
+    local org_domain_param=$3
     local anchor_tx_file=$4
 
     print_status $YELLOW "Updating anchor peer for ${org_name}..."
 
-    # Update anchor peer using orderer's TLS CA certificate and admin identity
-    docker exec -e CORE_PEER_LOCALMSPID="${org_name}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        -e CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/admin-msp \
-        ${peer_container} \
-        peer channel update \
+    # Set up paths
+    local peer_name="peer0"
+    local msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain_param}/users/admin.${org_domain_param}/msp"
+    local tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain_param}/peers/${peer_name}.${org_domain_param}/tls"
+    local anchor_tx_path="${PROJECT_ROOT}/config/channel-artifacts/${anchor_tx_file}"
+    local orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+
+    # Update anchor peer using local peer binary
+    local external_host=$(get_external_host "peer" "${org_domain_param}")
+    local peer_port=$(get_peer_port "${org_domain_param}")
+
+    export CORE_PEER_ID="${peer_name}.${org_domain_param}"
+    export CORE_PEER_ADDRESS="${external_host}:${peer_port}"
+    export CORE_PEER_LOCALMSPID="${org_name}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    "${FABRIC_BIN_PATH}/peer" channel update \
         -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} \
         -c ${CHANNEL_NAME} \
-        -f /etc/hyperledger/fabric/channel-artifacts/${anchor_tx_file} \
+        -f "${anchor_tx_path}" \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt
+        --cafile "${orderer_tls_ca_path}"
 
     if [ $? -eq 0 ]; then
         print_status $GREEN "✓ Anchor peer updated for ${org_name}"
@@ -155,75 +197,108 @@ update_anchor_peer() {
 
 # Function to list channels
 list_channels() {
-    local peer_container=$1
+    local org_domain=$1
     local org_name=$2
 
-    print_status $YELLOW "Listing channels for ${peer_container}..."
+    print_status $YELLOW "Listing channels for ${org_domain}..."
 
-    docker exec -e CORE_PEER_LOCALMSPID="${org_name}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        ${peer_container} \
-        peer channel list \
+    # Set up paths
+    local peer_name="peer0"
+    local msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp"
+    local tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls"
+    local orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+
+    # List channels using local peer binary
+    local external_host=$(get_external_host "peer" "${org_domain}")
+    local peer_port=$(get_peer_port "${org_domain}")
+
+    export CORE_PEER_ID="${peer_name}.${org_domain}"
+    export CORE_PEER_ADDRESS="${external_host}:${peer_port}"
+    export CORE_PEER_LOCALMSPID="${org_name}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    "${FABRIC_BIN_PATH}/peer" channel list \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt
+        --cafile "${orderer_tls_ca_path}"
 }
 
-# Copy orderer's TLS CA certificate to peer containers
-print_status $YELLOW "Copying orderer's TLS CA certificate to peer containers..."
+# Ensure orderer TLS CA is accessible for peer operations
+print_status $YELLOW "Ensuring orderer TLS CA certificate is accessible..."
 
-if [ "$DEPLOY_ORG1" = true ]; then
-    docker exec orderer1.${ORDERER_DOMAIN} cat /etc/hyperledger/fabric/tls/ca.crt | \
-        docker exec -i peer0.${ORG1_DOMAIN} sh -c 'cat > /etc/hyperledger/fabric/orderer-tls-ca.crt'
-    print_status $GREEN "✓ Orderer TLS CA copied to peer0.${ORG1_DOMAIN}"
+orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+
+if [ ! -f "${orderer_tls_ca_path}" ]; then
+    print_status $RED "Error: Orderer TLS CA certificate not found at ${orderer_tls_ca_path}"
+    exit 1
 fi
 
-if [ "$DEPLOY_ORG2" = true ]; then
-    docker exec orderer1.${ORDERER_DOMAIN} cat /etc/hyperledger/fabric/tls/ca.crt | \
-        docker exec -i peer0.${ORG2_DOMAIN} sh -c 'cat > /etc/hyperledger/fabric/orderer-tls-ca.crt'
-    print_status $GREEN "✓ Orderer TLS CA copied to peer0.${ORG2_DOMAIN}"
-fi
+print_status $GREEN "✓ Orderer TLS CA certificate accessible"
+
 
 
 
 # Create channel if not exists
 print_status $YELLOW "Checking if channel '${CHANNEL_NAME}' already exists..."
 
+channel_exists=false
+
 if [ "$DEPLOY_ORG1" = true ]; then
-    if docker exec peer0.${ORG1_DOMAIN} peer channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
-        print_status $YELLOW "Channel '${CHANNEL_NAME}' already exists. Skipping creation."
-    else
-        create_channel
+    if "${FABRIC_BIN_PATH}/peer" channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
+        channel_exists=true
     fi
 elif [ "$DEPLOY_ORG2" = true ]; then
-    if docker exec peer0.${ORG2_DOMAIN} peer channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
-        print_status $YELLOW "Channel '${CHANNEL_NAME}' already exists. Skipping creation."
-    else
-        create_channel
+    if "${FABRIC_BIN_PATH}/peer" channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
+        channel_exists=true
     fi
+fi
+
+if [ "$channel_exists" = true ]; then
+    print_status $YELLOW "Channel '${CHANNEL_NAME}' already exists. Skipping creation."
+else
+    create_channel
 fi
 
 # Join peers to channel
 if [ "$DEPLOY_ORG1" = true ]; then
-    # Check if peer is already joined
-    if ! docker exec peer0.${ORG1_DOMAIN} peer channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
-        join_channel "peer0.${ORG1_DOMAIN}" "${ORG1_NAME}"
+    # Check if peer is already joined by setting up environment and checking channel list
+    export CORE_PEER_ID="peer0.${ORG1_DOMAIN}"
+    export CORE_PEER_ADDRESS="${PEER0_ORG1_EXTERNAL_HOST}:${PEER0_ORG1_PORT}"
+    export CORE_PEER_LOCALMSPID="${ORG1_NAME}"
+    msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp"
+    tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls"
+    orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    if ! "${FABRIC_BIN_PATH}/peer" channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
+        join_channel "${ORG1_DOMAIN}" "${ORG1_NAME}"
 
         # Update anchor peer
-        update_anchor_peer "peer0.${ORG1_DOMAIN}" "${ORG1_NAME}" "${ORG1_DOMAIN}" "${ORG1_NAME}anchors.tx"
+        update_anchor_peer "${ORG1_DOMAIN}" "${ORG1_NAME}" "${ORG1_DOMAIN}" "${ORG1_NAME}anchors.tx"
     else
-        print_status $YELLOW "peer0.${ORG1_DOMAIN} already joined to channel '${CHANNEL_NAME}'"
+        print_status $YELLOW "Peer from ${ORG1_DOMAIN} already joined to channel '${CHANNEL_NAME}'"
     fi
 fi
 
 if [ "$DEPLOY_ORG2" = true ]; then
-    # Check if peer is already joined
-    if ! docker exec peer0.${ORG2_DOMAIN} peer channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
-        join_channel "peer0.${ORG2_DOMAIN}" "${ORG2_NAME}"
+    # Check if peer is already joined by setting up environment and checking channel list
+    export CORE_PEER_ID="peer0.${ORG2_DOMAIN}"
+    export CORE_PEER_ADDRESS="${PEER0_ORG2_EXTERNAL_HOST}:${PEER0_ORG2_PORT}"
+    export CORE_PEER_LOCALMSPID="${ORG2_NAME}"
+    msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/users/admin.${ORG2_DOMAIN}/msp"
+    tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls"
+    orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    if ! "${FABRIC_BIN_PATH}/peer" channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
+        join_channel "${ORG2_DOMAIN}" "${ORG2_NAME}"
 
         # Update anchor peer
-        update_anchor_peer "peer0.${ORG2_DOMAIN}" "${ORG2_NAME}" "${ORG2_DOMAIN}" "${ORG2_NAME}anchors.tx"
+        update_anchor_peer "${ORG2_DOMAIN}" "${ORG2_NAME}" "${ORG2_DOMAIN}" "${ORG2_NAME}anchors.tx"
     else
-        print_status $YELLOW "peer0.${ORG2_DOMAIN} already joined to channel '${CHANNEL_NAME}'"
+        print_status $YELLOW "Peer from ${ORG2_DOMAIN} already joined to channel '${CHANNEL_NAME}'"
     fi
 fi
 
@@ -231,42 +306,56 @@ fi
 print_status $YELLOW "=== Verifying Channel Membership ==="
 
 if [ "$DEPLOY_ORG1" = true ]; then
-    list_channels "peer0.${ORG1_DOMAIN}" "${ORG1_NAME}"
+    list_channels "${ORG1_DOMAIN}" "${ORG1_NAME}"
 fi
 
 if [ "$DEPLOY_ORG2" = true ]; then
-    list_channels "peer0.${ORG2_DOMAIN}" "${ORG2_NAME}"
+    list_channels "${ORG2_DOMAIN}" "${ORG2_NAME}"
 fi
 
 # Get channel info
 print_status $YELLOW "=== Getting Channel Information ==="
 
 if [ "$DEPLOY_ORG1" = true ]; then
-    docker exec -e CORE_PEER_LOCALMSPID="${ORG1_NAME}" \
-        -e CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt \
-        peer0.${ORG1_DOMAIN} \
-        peer channel getinfo \
+    # Set up paths
+    msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp"
+    tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls"
+    orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+
+    export CORE_PEER_ID="peer0.${ORG1_DOMAIN}"
+    export CORE_PEER_ADDRESS="${PEER0_ORG1_EXTERNAL_HOST}:${PEER0_ORG1_PORT}"
+    export CORE_PEER_LOCALMSPID="${ORG1_NAME}"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    "${FABRIC_BIN_PATH}/peer" channel getinfo \
         -c ${CHANNEL_NAME} \
         --tls \
-        --cafile /etc/hyperledger/fabric/orderer-tls-ca.crt
+        --cafile "${orderer_tls_ca_path}"
 fi
 
 # Display useful commands
 print_status $YELLOW "=== Useful Commands ==="
 echo "  List channels from Org1:"
-echo "    docker exec peer0.${ORG1_DOMAIN} peer channel list --tls --cafile /etc/hyperledger/fabric/tls/ca.crt"
+echo "    export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
+echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
+echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
+echo "    ${FABRIC_BIN_PATH}/peer channel list --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
 echo ""
 echo "  List channels from Org2:"
-echo "    docker exec peer0.${ORG2_DOMAIN} peer channel list --tls --cafile /etc/hyperledger/fabric/tls/ca.crt"
+echo "    export CORE_PEER_LOCALMSPID='${ORG2_NAME}'"
+echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt'"
+echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/users/admin.${ORG2_DOMAIN}/msp'"
+echo "    ${FABRIC_BIN_PATH}/peer channel list --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
 echo ""
 echo "  Get channel info:"
-echo "    docker exec peer0.${ORG1_DOMAIN} peer channel getinfo -c ${CHANNEL_NAME} --tls --cafile /etc/hyperledger/fabric/tls/ca.crt"
+echo "    ${FABRIC_BIN_PATH}/peer channel getinfo -c ${CHANNEL_NAME} --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
 echo ""
 echo "  Fetch channel block:"
-echo "    docker exec peer0.${ORG1_DOMAIN} peer channel fetch 0 ${CHANNEL_NAME}.block -c ${CHANNEL_NAME} --tls --cafile /etc/hyperledger/fabric/tls/ca.crt"
+echo "    ${FABRIC_BIN_PATH}/peer channel fetch 0 ${CHANNEL_NAME}.block -c ${CHANNEL_NAME} --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
 echo ""
 echo "  View channel configuration:"
-echo "    docker exec peer0.${ORG1_DOMAIN} peer channel getinfo -c ${CHANNEL_NAME} --tls --cafile /etc/hyperledger/fabric/tls/ca.crt"
+echo "    ${FABRIC_BIN_PATH}/peer channel getinfo -c ${CHANNEL_NAME} --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
 echo ""
 
 print_status $GREEN "=== Channel Creation and Join Completed Successfully ==="

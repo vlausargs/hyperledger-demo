@@ -22,6 +22,9 @@ print_status() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
+# Load Fabric environment helper functions
+source "${SCRIPT_DIR}/../helpers/fabric-env.sh"
+
 if [ ! -f "${PROJECT_ROOT}/.env" ]; then
     print_status $RED "Error: .env file not found at ${PROJECT_ROOT}/.env"
     exit 1
@@ -170,9 +173,14 @@ max_attempts=60
 attempt=1
 
 while [ $attempt -le $max_attempts ]; do
-    if docker exec orderer1.${ORDERER_DOMAIN} orderer version > /dev/null 2>&1; then
-        print_status $GREEN "✓ Orderer is ready"
-        break
+    # Check if container is running and healthy
+    if docker ps | grep -q "orderer1.${ORDERER_DOMAIN}" && \
+       docker inspect orderer1.${ORDERER_DOMAIN} | grep -q '"Status": "healthy"'; then
+        # Verify orderer is responsive by checking metrics endpoint
+        if curl -s http://localhost:8443/metrics > /dev/null 2>&1; then
+            print_status $GREEN "✓ Orderer is ready"
+            break
+        fi
     fi
 
     echo "  Attempt $attempt/$max_attempts: Waiting for orderer..."
@@ -189,29 +197,42 @@ fi
 # Verify orderer status
 print_status $YELLOW "Verifying orderer status..."
 sleep 10;
-if docker exec orderer1.${ORDERER_DOMAIN} orderer version 2>&1 | grep -q "Version:"; then
-    orderer_version=$(docker exec orderer1.${ORDERER_DOMAIN} orderer version | grep "Version:" | cut -d: -f2 | xargs)
-    print_status $GREEN "✓ Orderer is running (Version: $orderer_version)"
+
+# Check if container is running
+if docker ps | grep -q "orderer1.${ORDERER_DOMAIN}"; then
+    print_status $GREEN "✓ Orderer container is running"
 else
-    print_status $RED "✗ Failed to verify orderer version"
+    print_status $RED "✗ Orderer container is not running"
     exit 1
+fi
+
+# Verify local binary availability
+if "${FABRIC_BIN_PATH}/orderer" version 2>&1 | grep -q "Version:"; then
+    orderer_version=$("${FABRIC_BIN_PATH}/orderer" version | grep "Version:" | cut -d: -f2 | xargs)
+    print_status $GREEN "✓ Orderer binary available (Version: $orderer_version)"
+else
+    print_status $YELLOW "⚠ Orderer binary not found at ${FABRIC_BIN_PATH}"
 fi
 
 # Check if orderer is listening on the correct ports
 print_status $YELLOW "Checking orderer network connectivity..."
 
-if docker exec orderer1.${ORDERER_DOMAIN} netstat -tlnp 2>&1 | grep -q ":7050"; then
-    print_status $GREEN "✓ Orderer listening on port 7050"
+if netstat -tlnp 2>&1 | grep -q ":${ORDERER_PORT}"; then
+    print_status $GREEN "✓ Orderer listening on port ${ORDERER_PORT}"
+elif ss -tlnp 2>&1 | grep -q ":${ORDERER_PORT}"; then
+    print_status $GREEN "✓ Orderer listening on port ${ORDERER_PORT}"
 else
-    print_status $RED "✗ Orderer not listening on port 7050"
+    print_status $RED "✗ Orderer not listening on port ${ORDERER_PORT}"
     exit 1
 fi
 
 if [ "$ORDERER_TYPE" = "etcdraft" ]; then
-    if docker exec orderer1.${ORDERER_DOMAIN} netstat -tlnp 2>&1 | grep -q ":7051"; then
-        print_status $GREEN "✓ Orderer listening on port 7051 (cluster)"
+    if netstat -tlnp 2>&1 | grep -q ":${ORDERER_SSL_PORT}"; then
+        print_status $GREEN "✓ Orderer listening on port ${ORDERER_SSL_PORT} (cluster)"
+    elif ss -tlnp 2>&1 | grep -q ":${ORDERER_SSL_PORT}"; then
+        print_status $GREEN "✓ Orderer listening on port ${ORDERER_SSL_PORT} (cluster)"
     else
-        print_status $RED "✗ Orderer not listening on port 7051"
+        print_status $RED "✗ Orderer not listening on port ${ORDERER_SSL_PORT}"
         exit 1
     fi
 else
@@ -233,7 +254,7 @@ echo ""
 print_status $YELLOW "=== Useful Commands ==="
 echo "  View logs: docker logs -f orderer.${ORDERER_DOMAIN}"
 echo "  Check status: docker ps | grep orderer"
-echo "  Execute command: docker exec -it orderer1.${ORDERER_DOMAIN} bash"
+echo "  Execute command locally: ${FABRIC_BIN_PATH}/orderer <command>"
 echo "  View metrics: curl http://localhost:8443/metrics"
 echo ""
 
