@@ -2,6 +2,7 @@
 /organizations
 /docker-compose
 /config/channel-artifacts
+/fabric-binaries
 *.block
 *.tx
 *.tar.gz
