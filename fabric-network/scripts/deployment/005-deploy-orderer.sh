@@ -115,7 +115,7 @@ services:
       - ORDERER_OPERATIONS_LISTENADDRESS=0.0.0.0:8443
       - ORDERER_DEBUG_BROADCASTTRACEDETECTION=data
     working_dir: /opt/gopath/src/github.com/hyperledger/fabric/orderers/orderer1.${ORDERER_DOMAIN}
-    command: sh -c "apk add --no-cache curl && orderer"
+    command: sh -c "apt-get update && apt-get install -y curl && orderer"
     volumes:
       - ${PROJECT_ROOT}/config/channel-artifacts:/etc/hyperledger/fabric/channel-artifacts
       - ${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/msp:/etc/hyperledger/fabric/msp

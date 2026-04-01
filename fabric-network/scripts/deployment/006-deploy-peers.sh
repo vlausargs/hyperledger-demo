@@ -78,7 +78,8 @@ create_peer_compose() {
     local couchdb_user=$7
     local couchdb_pass=$8
     local peer_metrics_port=$9
-    local compose_file=${10}
+    local peer_profile_port=${10}
+    local compose_file=${11}
 
     cat > "$compose_file" << EOF
 version: '3.8'
@@ -139,6 +140,7 @@ services:
       - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:$peer_metrics_port
       - CORE_METRICS_PROVIDER=prometheus
       - CORE_PEER_PROFILE_ENABLED=true
+      - CORE_PEER_PROFILE_LISTENADDRESS=0.0.0.0:$peer_profile_port
       - CORE_CHAINCODE_LOGGING_LEVEL=INFO
       - CORE_CHAINCODE_LOGGING_SHIM=INFO
       - CORE_CHAINCODE_LOGGING_FORMAT= '%{color}%{time:2006-01-02 15:04:15.000 MST} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}'
@@ -149,7 +151,7 @@ services:
       - CORE_CHAINCODE_BUILDER=hyperledger/fabric-ccenv:2.5
       - CORE_CHAINCODE_EXTERNALBUILDERS=[]
     working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
-    command: sh -c "apk add --no-cache curl docker-cli && peer node start"
+    command: sh -c "apt-get update && apt-get install -y curl docker-cli && peer node start"
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/msp:/etc/hyperledger/fabric/msp
@@ -217,6 +219,7 @@ deploy_peer() {
     local couchdb_user=$7
     local couchdb_pass=$8
     local peer_metrics_port=$9
+    local peer_profile_port=${10}
 
     print_status $YELLOW "=== Deploying ${peer_name}.${org_domain} ==="
 
@@ -246,6 +249,7 @@ deploy_peer() {
         "$couchdb_user" \
         "$couchdb_pass" \
         "$peer_metrics_port" \
+        "$peer_profile_port" \
         "$compose_file"
 
     # Deploy peer
@@ -352,7 +356,7 @@ deploy_peer() {
     # Wait for peer to be ready
     print_status $YELLOW "Waiting for ${peer_name}.${org_domain} to be ready..."
 
-    local max_attempts=30
+    local max_attempts=60
     local attempt=1
 
     while [ $attempt -le $max_attempts ]; do
@@ -442,6 +446,7 @@ if [ "$DEPLOY_ORG1" = true ]; then
         "${COUCHDB_ORG1_USER}" \
         "${COUCHDB_ORG1_PASSWORD}" \
         "${PEER0_ORG1_METRICS_PORT}" \
+        "${PEER0_ORG1_PROFILE_PORT}" \
         "${PROJECT_ROOT}/docker-compose/org1/peer.yml"
 fi
 
@@ -457,6 +462,7 @@ if [ "$DEPLOY_ORG2" = true ]; then
         "${COUCHDB_ORG2_USER}" \
         "${COUCHDB_ORG2_PASSWORD}" \
         "${PEER0_ORG2_METRICS_PORT}" \
+        "${PEER0_ORG2_PROFILE_PORT}" \
         "${PROJECT_ROOT}/docker-compose/org2/peer.yml"
 fi
 
