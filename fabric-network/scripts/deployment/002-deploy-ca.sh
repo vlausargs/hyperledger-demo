@@ -257,7 +257,7 @@ if [ "$DEPLOY_ORDERER" = true ]; then
         "${config_dir}" \
         "${compose_file}"
 
-    docker-compose -f "$compose_file" up -d
+    docker compose -f "$compose_file" up -d
     print_status $GREEN "✓ Orderer CA deployed successfully"
 fi
 
@@ -288,7 +288,7 @@ if [ "$DEPLOY_ORG1" = true ]; then
         "${config_dir}" \
         "${compose_file}"
 
-    docker-compose -f "$compose_file" up -d
+    docker compose -f "$compose_file" up -d
     print_status $GREEN "✓ Org1 CA deployed successfully"
 fi
 
@@ -319,7 +319,7 @@ if [ "$DEPLOY_ORG2" = true ]; then
         "${config_dir}" \
         "${compose_file}"
 
-    docker-compose -f "$compose_file" up -d
+    docker compose -f "$compose_file" up -d
     print_status $GREEN "✓ Org2 CA deployed successfully"
 fi
 

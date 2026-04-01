@@ -97,7 +97,7 @@ if [ "$DEPLOY_ORDERER" = true ]; then
         "${POSTGRES_ORDERER_DB}" \
         "$compose_file"
 
-    docker-compose -f "$compose_file" up -d
+    docker compose -f "$compose_file" up -d
     print_status $GREEN "✓ Orderer PostgreSQL deployed successfully"
 fi
 
@@ -114,7 +114,7 @@ if [ "$DEPLOY_ORG1" = true ]; then
         "${POSTGRES_ORG1_DB}" \
         "$compose_file"
 
-    docker-compose -f "$compose_file" up -d
+    docker compose -f "$compose_file" up -d
     print_status $GREEN "✓ Org1 PostgreSQL deployed successfully"
 fi
 
@@ -131,7 +131,7 @@ if [ "$DEPLOY_ORG2" = true ]; then
         "${POSTGRES_ORG2_DB}" \
         "$compose_file"
 
-    docker-compose -f "$compose_file" up -d
+    docker compose -f "$compose_file" up -d
     print_status $GREEN "✓ Org2 PostgreSQL deployed successfully"
 fi
 

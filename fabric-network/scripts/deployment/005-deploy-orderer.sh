@@ -150,7 +150,7 @@ print_status $GREEN "✓ Orderer configuration created"
 # Deploy the orderer
 print_status $YELLOW "Deploying orderer service..."
 
-docker-compose -f "$ORDERER_COMPOSE_FILE" --env-file "${PROJECT_ROOT}/.env" up -d
+docker compose -f "$ORDERER_COMPOSE_FILE" --env-file "${PROJECT_ROOT}/.env" up -d
 
 print_status $GREEN "✓ Orderer service deployed"
 

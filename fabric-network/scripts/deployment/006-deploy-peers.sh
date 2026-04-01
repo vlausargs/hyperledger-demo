@@ -314,7 +314,7 @@ deploy_peer() {
     # Additional wait to ensure port is fully released
     sleep 3
 
-    docker-compose -f "$compose_file" --env-file "${PROJECT_ROOT}/.env" up -d
+    docker compose -f "$compose_file" --env-file "${PROJECT_ROOT}/.env" up -d
 
     # Give containers time to start
     sleep 2
