@@ -3,6 +3,7 @@
 /docker-compose
 /config/channel-artifacts
 /config/ca
+/config/couchdb
 /fabric-binaries
 *.block
 *.tx
