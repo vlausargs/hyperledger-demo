@@ -59,14 +59,12 @@ services:
       POSTGRES_USER: ${db_user}
       POSTGRES_PASSWORD: ${db_pass}
       POSTGRES_DB: ${db_database}
-    ports:
-      - "${db_port}:5432"
+      PGPORT: ${db_port}
     volumes:
       - ${db_name}_hlf_data:/var/lib/postgresql/data
-    networks:
-      - ${NETWORK_NAME}
+    network_mode: host
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${db_user} -d ${db_database}"]
+      test: ["CMD-SHELL", "pg_isready -U ${db_user} -d ${db_database} -p ${db_port}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -83,11 +81,6 @@ services:
 volumes:
   ${db_name}_hlf_data:
     driver: local
-
-networks:
-  ${NETWORK_NAME}:
-    driver: bridge
-    name: ${NETWORK_NAME}
 EOF
 }
 

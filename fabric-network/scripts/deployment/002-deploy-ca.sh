@@ -67,6 +67,7 @@ generate_ca_server_config() {
     local db_user=$6
     local db_pass=$7
     local db_name=$8
+    local ca_port=$9
 
     mkdir -p "${config_dir}"
 
@@ -78,7 +79,7 @@ ca:
   chainfile: ca-chain.pem
 
 address: 0.0.0.0
-port: 7054
+port: ${ca_port}
 
 intermediate:
   parentserver:
@@ -192,16 +193,13 @@ services:
       - FABRIC_CA_SERVER_CA_CERTFILE=/etc/hyperledger/fabric-ca-server-config/ca.${ca_hostname}-cert.pem
       - FABRIC_CA_SERVER_CA_KEYFILE=/etc/hyperledger/fabric-ca-server-config/priv_sk
       - FABRIC_CA_SERVER_TLS_ENABLED=false
-    ports:
-      - "${ca_port}:7054"
     volumes:
       - ${ca_name}_hlf_data:/etc/hyperledger/fabric-ca-server
       - ${config_dir}/fabric-ca-server-config.yaml:/etc/hyperledger/fabric-ca-server/fabric-ca-server-config.yaml
-    networks:
-      - ${NETWORK_NAME}
+    network_mode: host
     command: sh -c "fabric-ca-server start -b ${ca_hostname}-admin:${ca_hostname}-adminpw -c /etc/hyperledger/fabric-ca-server/fabric-ca-server-config.yaml -d"
     healthcheck:
-      test: ["CMD", "sh", "-c", "nc -z localhost 7054 || exit 1"]
+      test: ["CMD", "sh", "-c", "nc -z localhost ${ca_port} || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -218,11 +216,6 @@ services:
 volumes:
   ${ca_name}_hlf_data:
     driver: local
-
-networks:
-  ${NETWORK_NAME}:
-    driver: bridge
-    name: ${NETWORK_NAME}
 EOF
 
     print_status $GREEN "✓ Generated docker-compose: ${compose_file}"
@@ -253,7 +246,8 @@ if [ "$DEPLOY_ORDERER" = true ]; then
         "${POSTGRES_ORDERER_PORT}" \
         "${POSTGRES_ORDERER_USER}" \
         "${POSTGRES_ORDERER_PASSWORD}" \
-        "${POSTGRES_ORDERER_DB}"
+        "${POSTGRES_ORDERER_DB}" \
+        "${CA_ORDERER_PORT}"
 
     # Generate docker-compose file
     create_ca_compose \
@@ -283,7 +277,8 @@ if [ "$DEPLOY_ORG1" = true ]; then
         "${POSTGRES_ORG1_PORT}" \
         "${POSTGRES_ORG1_USER}" \
         "${POSTGRES_ORG1_PASSWORD}" \
-        "${POSTGRES_ORG1_DB}"
+        "${POSTGRES_ORG1_DB}" \
+        "${CA_ORG1_PORT}"
 
     # Generate docker-compose file
     create_ca_compose \
@@ -313,7 +308,8 @@ if [ "$DEPLOY_ORG2" = true ]; then
         "${POSTGRES_ORG2_PORT}" \
         "${POSTGRES_ORG2_USER}" \
         "${POSTGRES_ORG2_PASSWORD}" \
-        "${POSTGRES_ORG2_DB}"
+        "${POSTGRES_ORG2_DB}" \
+        "${CA_ORG2_PORT}"
 
     # Generate docker-compose file
     create_ca_compose \

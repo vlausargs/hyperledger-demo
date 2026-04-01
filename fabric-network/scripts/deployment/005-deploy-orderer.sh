@@ -97,7 +97,7 @@ services:
       - ORDERER_KAFKA_TOPIC_REPLICATIONFACTOR=1
       - ORDERER_KAFKA_VERBOSE=true
       - ORDERER_GENERAL_CLUSTER_LISTENADDRESS=0.0.0.0
-      - ORDERER_GENERAL_CLUSTER_LISTENPORT=7051
+      - ORDERER_GENERAL_CLUSTER_LISTENPORT=\${ORDERER_SSL_PORT}
       - ORDERER_GENERAL_CLUSTER_CLIENTAUTHREQUIRED=\${TLS_CLIENTAUTHREQUIRED}
       - ORDERER_GENERAL_CLUSTER_CLIENTROOTCAS_FILES=/etc/hyperledger/fabric/tls/ca.crt,/etc/hyperledger/fabric/org-msp/tlscacerts/*.pem
       - ORDERER_GENERAL_CLUSTER_SERVERCERTIFICATE=/etc/hyperledger/fabric/tls/server.crt
@@ -122,15 +122,7 @@ services:
       - ${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls:/etc/hyperledger/fabric/tls
       - ${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/msp:/etc/hyperledger/fabric/org-msp
       - orderer1.${ORDERER_DOMAIN}:/var/hyperledger/production/orderer
-    ports:
-      - \${ORDERER_PORT}:7050
-      - \${ORDERER_SSL_PORT}:7051
-      - 7053:7053
-      - 8443:8443
-    networks:
-      $NETWORK_NAME:
-        aliases:
-          - orderer1.${ORDERER_DOMAIN}
+    network_mode: host
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8443/metrics"]
       interval: 30s
@@ -151,10 +143,6 @@ volumes:
   orderer1.${ORDERER_DOMAIN}:
     driver: local
 
-networks:
-  $NETWORK_NAME:
-    name: $NETWORK_NAME
-    external: true
 EOF
 
 print_status $GREEN "✓ Orderer configuration created"

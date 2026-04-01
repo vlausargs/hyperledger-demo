@@ -164,6 +164,18 @@ cleanup_artifacts() {
         print_status $GREEN "✓ Channel artifacts removed"
     fi
 
+    # Remove CA Config
+    if [ -d "${PROJECT_ROOT}/config/ca" ]; then
+        rm -rf "${PROJECT_ROOT}/config/ca"
+        print_status $GREEN "✓ CA Config removed"
+    fi
+
+    # Remove Couchdb
+    if [ -d "${PROJECT_ROOT}/config/couchdb" ]; then
+        rm -rf "${PROJECT_ROOT}/config/couchdb"
+        print_status $GREEN "✓ Couchdb removed"
+    fi
+
     # Remove fabric-ca-server config
     if [ -d "${PROJECT_ROOT}/config/fabric-ca-server" ]; then
         rm -rf "${PROJECT_ROOT}/config/fabric-ca-server"
