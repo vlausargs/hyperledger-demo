@@ -157,7 +157,7 @@ print_status $GREEN "✓ Orderer service deployed"
 # Wait for orderer to be ready
 print_status $YELLOW "Waiting for orderer to be ready..."
 
-max_attempts=60
+max_attempts=120
 attempt=1
 
 while [ $attempt -le $max_attempts ]; do

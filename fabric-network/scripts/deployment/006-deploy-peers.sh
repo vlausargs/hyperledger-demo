@@ -356,7 +356,7 @@ deploy_peer() {
     # Wait for peer to be ready
     print_status $YELLOW "Waiting for ${peer_name}.${org_domain} to be ready..."
 
-    local max_attempts=60
+    local max_attempts=120
     local attempt=1
 
     while [ $attempt -le $max_attempts ]; do
