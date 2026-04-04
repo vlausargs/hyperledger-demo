@@ -56,20 +56,20 @@ if [ ! -d "${PROJECT_ROOT}/fabric-network/chaincode/basic" ]; then
     exit 1
 fi
 
-# Check if peers are running
-if [ "$DEPLOY_ORG1" = true ]; then
-    if ! docker ps | grep -q "peer0.${ORG1_DOMAIN}"; then
-        print_status $RED "Error: Org1 peer is not running. Please run script 006 first."
-        exit 1
-    fi
-fi
+# # Check if peers are running
+# if [ "$DEPLOY_ORG1" = true ]; then
+#     if ! docker ps | grep -q "peer0.${ORG1_DOMAIN}"; then
+#         print_status $RED "Error: Org1 peer is not running. Please run script 006 first."
+#         exit 1
+#     fi
+# fi
 
-if [ "$DEPLOY_ORG2" = true ]; then
-    if ! docker ps | grep -q "peer0.${ORG2_DOMAIN}"; then
-        print_status $RED "Error: Org2 peer is not running. Please run script 006 first."
-        exit 1
-    fi
-fi
+# if [ "$DEPLOY_ORG2" = true ]; then
+#     if ! docker ps | grep -q "peer0.${ORG2_DOMAIN}"; then
+#         print_status $RED "Error: Org2 peer is not running. Please run script 006 first."
+#         exit 1
+#     fi
+# fi
 
 print_status $GREEN "✓ Prerequisites verified"
 

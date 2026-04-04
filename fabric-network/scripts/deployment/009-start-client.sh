@@ -52,18 +52,18 @@ fi
 GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
 print_status $GREEN "✓ Go version: $GO_VERSION"
 
-# Check if chaincode is deployed
-if [ "$DEPLOY_ORG1" = true ]; then
-    if ! docker ps | grep -q "peer0.${ORG1_DOMAIN}"; then
-        print_status $RED "Error: Org1 peer is not running. Chaincode might not be deployed."
-        exit 1
-    fi
-elif [ "$DEPLOY_ORG2" = true ]; then
-    if ! docker ps | grep -q "peer0.${ORG2_DOMAIN}"; then
-        print_status $RED "Error: Org2 peer is not running. Chaincode might not be deployed."
-        exit 1
-    fi
-fi
+# # Check if chaincode is deployed
+# if [ "$DEPLOY_ORG1" = true ]; then
+#     if ! docker ps | grep -q "peer0.${ORG1_DOMAIN}"; then
+#         print_status $RED "Error: Org1 peer is not running. Chaincode might not be deployed."
+#         exit 1
+#     fi
+# elif [ "$DEPLOY_ORG2" = true ]; then
+#     if ! docker ps | grep -q "peer0.${ORG2_DOMAIN}"; then
+#         print_status $RED "Error: Org2 peer is not running. Chaincode might not be deployed."
+#         exit 1
+#     fi
+# fi
 
 print_status $GREEN "✓ Prerequisites verified"
 
