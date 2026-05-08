@@ -213,6 +213,11 @@ export SERVER_PORT="${CLIENT_PORT}"
 export GIN_MODE="${CLIENT_MODE}"
 export TLS_CERT_PATH="${PROJECT_ROOT}/fabric-network/client/crypto"
 export CONNECTION_PROFILE="${PROJECT_ROOT}/fabric-network/client/crypto/connection-profile.yaml"
+export JWT_SECRET="${JWT_SECRET:-hlf-demo-jwt-secret-change-this-in-production}"
+export CA_URL="http://localhost:${CA_ORG1_PORT}"
+export CA_NAME="${CA_ORG1_NAME}"
+export MSP_ID="${ORG1_NAME}"
+export CA_ADMIN_MSP_DIR="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/bootstrap-admin.${ORG1_DOMAIN}/msp"
 
 # Create wallet directory
 mkdir -p "$WALLET_PATH"
@@ -361,6 +366,7 @@ export SERVER_PORT="8080"
 export GIN_MODE="debug"
 export TLS_CERT_PATH="./crypto"
 export CONNECTION_PROFILE="./crypto/connection-profile.yaml"
+export JWT_SECRET="${JWT_SECRET:-hlf-demo-jwt-secret-change-this-in-production}"
 
 # Start application
 ./fabric-client

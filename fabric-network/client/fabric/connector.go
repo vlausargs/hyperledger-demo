@@ -1,9 +1,11 @@
 package fabric
 
 import (
+	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,11 +13,13 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	gwproto "github.com/hyperledger/fabric-protos-go-apiv2/gateway"
 	"github.com/hyperledger/fabric-gateway/pkg/client"
 	"github.com/hyperledger/fabric-gateway/pkg/identity"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/status"
 )
 
 // Gateway represents the Fabric Gateway connection
@@ -29,7 +33,7 @@ type Gateway struct {
 	tlsCertPath       string
 	mspPath           string
 	connectionProfile *ConnectionProfile
-	logger            *log.Logger
+	logger            *slog.Logger
 }
 
 // ConnectionProfile represents the parsed connection profile YAML
@@ -86,16 +90,16 @@ type HTTPOptions struct {
 
 // NewGateway creates a new Fabric Gateway connection using a connection profile
 func NewGateway(channelID, chaincodeID, walletPath, tlsCertPath, connectionProfilePath string) (*Gateway, error) {
-	logger := log.New(os.Stdout, "[Fabric-Gateway] ", log.LstdFlags|log.Lshortfile)
+	logger := slog.Default().With("component", "fabric-gateway")
 
-	logger.Printf("Initializing Fabric Gateway with connection profile: %s", connectionProfilePath)
+	logger.Info("initializing fabric gateway", "connection_profile", connectionProfilePath)
 
 	// Load and parse the connection profile
 	connectionProfile, err := loadConnectionProfile(connectionProfilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load connection profile: %w", err)
 	}
-	logger.Printf("Connection profile loaded successfully: %s", connectionProfile.Name)
+	logger.Info("connection profile loaded", "name", connectionProfile.Name)
 
 	gw := &Gateway{
 		channel:           channelID,
@@ -117,7 +121,7 @@ func NewGateway(channelID, chaincodeID, walletPath, tlsCertPath, connectionProfi
 		return nil, fmt.Errorf("failed to connect to gateway: %w", err)
 	}
 
-	gw.logger.Printf("Successfully connected to Fabric gateway (Channel: %s, Chaincode: %s)", channelID, chaincodeID)
+	gw.logger.Info("connected to fabric gateway", "channel", channelID, "chaincode", chaincodeID)
 
 	return gw, nil
 }
@@ -146,7 +150,7 @@ func (gw *Gateway) connect() error {
 		return fmt.Errorf("organization %s not found in connection profile", orgName)
 	}
 
-	gw.logger.Printf("Using organization: %s (MSPID: %s)", orgName, org.MSPID)
+	gw.logger.Info("using organization", "name", orgName, "mspid", org.MSPID)
 
 	// Get the first peer from the organization
 	if len(org.Peers) == 0 {
@@ -159,7 +163,7 @@ func (gw *Gateway) connect() error {
 		return fmt.Errorf("peer %s not found in connection profile", peerName)
 	}
 
-	gw.logger.Printf("Using peer: %s", peerName)
+	gw.logger.Info("using peer", "peer", peerName)
 
 	// Parse peer URL
 	peerURL, err := url.Parse(peer.URL)
@@ -178,7 +182,7 @@ func (gw *Gateway) connect() error {
 	}
 
 	peerEndpoint := fmt.Sprintf("%s:%s", peerHost, peerPort)
-	gw.logger.Printf("Peer endpoint: %s", peerEndpoint)
+	gw.logger.Info("peer endpoint", "endpoint", peerEndpoint)
 
 	// Get TLS certificate from connection profile
 	if peer.TLSCACerts.Pem == "" {
@@ -191,21 +195,26 @@ func (gw *Gateway) connect() error {
 		return fmt.Errorf("failed to append TLS certificate to cert pool from connection profile")
 	}
 
-	gw.logger.Printf("TLS certificate loaded from connection profile for peer %s", peerName)
+	gw.logger.Info("TLS certificate loaded", "peer", peerName)
 
 	// Get SSL target name override from grpc options or default to peer name
 	sslTargetNameOverride := peerName
 	if override, exists := peer.GRPCOptions["ssl-target-name-override"]; exists {
 		sslTargetNameOverride = override
-		gw.logger.Printf("Using SSL target name override: %s", sslTargetNameOverride)
+		gw.logger.Info("using SSL target name override", "override", sslTargetNameOverride)
 	}
 
 	// Create gRPC connection with TLS
 	grpcCredentials := credentials.NewClientTLSFromCert(certPool, sslTargetNameOverride)
 
-	gw.logger.Printf("Attempting to connect to peer at %s with server name override: %s", peerEndpoint, sslTargetNameOverride)
+	gw.logger.Info("connecting to peer", "endpoint", peerEndpoint, "server_name", sslTargetNameOverride)
 
-	grpcConnection, err := grpc.Dial(
+	dialCtx, dialCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer dialCancel()
+
+	//nolint:staticcheck // grpc.DialContext deprecated in gRPC 1.69+ but WithBlock requires it
+	grpcConnection, err := grpc.DialContext(
+		dialCtx,
 		peerEndpoint,
 		grpc.WithTransportCredentials(grpcCredentials),
 		grpc.WithBlock(),
@@ -216,21 +225,21 @@ func (gw *Gateway) connect() error {
 		}),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create gRPC connection to %s: %w", peerEndpoint, err)
+		return fmt.Errorf("failed to create gRPC connection to %s within 30s: %w", peerEndpoint, err)
 	}
 
-	gw.logger.Printf("Successfully established gRPC connection to %s", peerEndpoint)
+	gw.logger.Info("gRPC connection established", "endpoint", peerEndpoint)
 
 	// Load identity from wallet/crypto directory
-	gw.logger.Printf("Loading identity from wallet/crypto directory...")
+	gw.logger.Info("loading identity", "mspid", org.MSPID)
 	id, sign, err := gw.loadIdentity(org.MSPID)
 	if err != nil {
 		return fmt.Errorf("failed to load identity: %w", err)
 	}
-	gw.logger.Printf("Identity loaded successfully: MSPID=%s", org.MSPID)
+	gw.logger.Info("identity loaded", "mspid", org.MSPID)
 
 	// Create gateway
-	gw.logger.Printf("Creating Fabric Gateway connection...")
+	gw.logger.Info("creating fabric gateway connection")
 	gw.gateway, err = client.Connect(
 		id,
 		client.WithSign(sign),
@@ -243,17 +252,11 @@ func (gw *Gateway) connect() error {
 	if err != nil {
 		return fmt.Errorf("failed to create gateway: %w", err)
 	}
-	gw.logger.Printf("Fabric Gateway created successfully")
-
-	// Get network
-	gw.logger.Printf("Getting network for channel: %s", gw.channel)
+	gw.logger.Info("fabric gateway created")
 	gw.network = gw.gateway.GetNetwork(gw.channel)
-	gw.logger.Printf("Network obtained successfully for channel: %s", gw.channel)
-
-	// Get contract
-	gw.logger.Printf("Getting contract for chaincode: %s", gw.chaincode)
+	gw.logger.Info("network obtained", "channel", gw.channel)
 	gw.contract = gw.network.GetContract(gw.chaincode)
-	gw.logger.Printf("Contract obtained successfully for chaincode: %s", gw.chaincode)
+	gw.logger.Info("contract obtained", "chaincode", gw.chaincode)
 
 	return nil
 }
@@ -263,7 +266,6 @@ func (gw *Gateway) loadIdentity(mspID string) (*identity.X509Identity, identity.
 	// Use the tlsCertPath as the base directory for crypto files
 	certPath := filepath.Join(gw.tlsCertPath, "signcerts", "cert.pem")
 	keyPath := filepath.Join(gw.tlsCertPath, "keystore", "priv_sk")
-	mspConfigPath := filepath.Join(gw.tlsCertPath, "config.yaml")
 
 	certBytes, err := os.ReadFile(certPath)
 	if err != nil {
@@ -283,14 +285,6 @@ func (gw *Gateway) loadIdentity(mspID string) (*identity.X509Identity, identity.
 	privateKey, err := identity.PrivateKeyFromPEM(keyBytes)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create private key from PEM: %w", err)
-	}
-
-	// Load MSP configuration to properly identify organizational units
-	mspConfigBytes, err := os.ReadFile(mspConfigPath)
-	if err == nil {
-		// Parse the MSP config and extract OU identifiers
-		// This ensures the Fabric Gateway SDK knows the identity has proper OU attributes
-		_ = mspConfigBytes // Acknowledge we read the config
 	}
 
 	// Create X509Identity using the MSPID from connection profile
@@ -317,7 +311,7 @@ func (gw *Gateway) GetContract() *client.Contract {
 func (gw *Gateway) Close() {
 	if gw.gateway != nil {
 		gw.gateway.Close()
-		gw.logger.Println("Gateway connection closed")
+		gw.logger.Info("gateway connection closed")
 	}
 }
 
@@ -331,58 +325,63 @@ func (gw *Gateway) GetChaincode() string {
 	return gw.chaincode
 }
 
-// SubmitTransaction submits a transaction to the ledger
-func (gw *Gateway) SubmitTransaction(function string, args ...string) ([]byte, error) {
-	gw.logger.Printf("Submitting transaction: %s with args: %v", function, args)
+// extractEndorseError pulls the chaincode error message from gRPC status Details
+// when the gateway returns "see attached details for more info".
+func extractEndorseError(err error) error {
+	var endorseErr *client.EndorseError
+	if !errors.As(err, &endorseErr) {
+		return err
+	}
+	for _, detail := range status.Convert(endorseErr).Details() {
+		if ed, ok := detail.(*gwproto.ErrorDetail); ok && ed.GetMessage() != "" {
+			return fmt.Errorf("%s", ed.GetMessage())
+		}
+	}
+	return err
+}
 
-	result, err := gw.contract.SubmitTransaction(function, args...)
+// SubmitTransaction submits a transaction and waits for commit confirmation.
+func (gw *Gateway) SubmitTransaction(function string, args ...string) ([]byte, error) {
+	gw.logger.Info("submitting transaction", "function", function, "args", args)
+
+	result, commit, err := gw.contract.SubmitAsync(function, client.WithArguments(args...))
 	if err != nil {
-		return nil, fmt.Errorf("failed to submit transaction: %w", err)
+		return nil, fmt.Errorf("failed to submit transaction %s: %w", function, extractEndorseError(err))
 	}
 
-	gw.logger.Printf("Transaction submitted successfully")
+	status, err := commit.Status()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit status for %s: %w", function, err)
+	}
+	if !status.Successful {
+		return nil, fmt.Errorf("transaction %s committed with failure code: %v", function, status.Code)
+	}
+
+	gw.logger.Info("transaction committed", "function", function, "block", status.BlockNumber)
 	return result, nil
 }
 
 // EvaluateTransaction evaluates a transaction query
 func (gw *Gateway) EvaluateTransaction(function string, args ...string) ([]byte, error) {
-	gw.logger.Printf("Evaluating transaction: %s with args: %v", function, args)
+	gw.logger.Info("evaluating transaction", "function", function)
 
 	if gw.contract == nil {
 		return nil, fmt.Errorf("contract is nil, gateway connection may not be properly initialized")
 	}
 
-	gw.logger.Printf("Contract is not nil, proceeding with evaluation...")
 	result, err := gw.contract.EvaluateTransaction(function, args...)
 	if err != nil {
-		gw.logger.Printf("ERROR evaluating transaction: %v", err)
+		gw.logger.Error("evaluate transaction failed", "function", function, "error", err)
 		return nil, fmt.Errorf("failed to evaluate transaction: %w", err)
 	}
 
-	gw.logger.Printf("Transaction evaluated successfully, result length: %d bytes", len(result))
+	gw.logger.Info("transaction evaluated", "function", function, "result_bytes", len(result))
 	return result, nil
-}
-
-// SubmitAsyncTransaction submits a transaction asynchronously
-func (gw *Gateway) SubmitAsyncTransaction(function string, args ...string) (*client.Commit, error) {
-	gw.logger.Printf("Submitting async transaction: %s with args: %v", function, args)
-
-	_, commit, err := gw.contract.SubmitAsync(function, client.WithArguments(args...))
-	if err != nil {
-		return nil, fmt.Errorf("failed to submit async transaction: %w", err)
-	}
-
-	return commit, nil
 }
 
 // GetNetwork returns the network
 func (gw *Gateway) GetNetwork() *client.Network {
 	return gw.network
-}
-
-// GetLogger returns the gateway logger
-func (gw *Gateway) GetLogger() *log.Logger {
-	return gw.logger
 }
 
 // GetConnectionProfile returns the loaded connection profile

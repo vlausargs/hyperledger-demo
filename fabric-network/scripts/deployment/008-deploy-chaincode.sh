@@ -144,29 +144,32 @@ install_chaincode() {
     export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
     export CORE_PEER_MSPCONFIGPATH="${msp_path}"
 
-    "${FABRIC_BIN_PATH}/peer" lifecycle chaincode install \
+    install_output=$("${FABRIC_BIN_PATH}/peer" lifecycle chaincode install \
         "${local_package_file}" \
         --tls \
-        --cafile "${orderer_tls_ca_path}"
+        --cafile "${orderer_tls_ca_path}" 2>&1)
+    install_exit=$?
 
-    if [ $? -eq 0 ]; then
+    if [ $install_exit -eq 0 ]; then
         print_status $GREEN "✓ Chaincode installed successfully for ${org_name}"
-
-        # Get the package ID
-        local package_id=$("${FABRIC_BIN_PATH}/peer" lifecycle chaincode queryinstalled \
-            --tls \
-            --cafile "${orderer_tls_ca_path}" \
-            --output json | jq -r ".installed_chaincodes[] | select(.label==\"${CHAINCODE_NAME}_${CHAINCODE_VERSION}\") | .package_id")
-
-        if [ -n "$package_id" ]; then
-            print_status $GREEN "✓ Package ID: $package_id"
-            echo "$package_id"
-        else
-            print_status $RED "✗ Failed to get package ID"
-            return 1
-        fi
+    elif echo "$install_output" | grep -q "already successfully installed"; then
+        print_status $YELLOW "⚠ Chaincode already installed for ${org_name}, skipping"
     else
-        print_status $RED "✗ Failed to install chaincode for ${org_name}"
+        print_status $RED "✗ Failed to install chaincode for ${org_name}: $install_output"
+        return 1
+    fi
+
+    # Get the package ID (works whether just installed or already existed)
+    local package_id=$("${FABRIC_BIN_PATH}/peer" lifecycle chaincode queryinstalled \
+        --tls \
+        --cafile "${orderer_tls_ca_path}" \
+        --output json | jq -r ".installed_chaincodes[] | select(.label==\"${CHAINCODE_NAME}_${CHAINCODE_VERSION}\") | .package_id" | tail -1)
+
+    if [ -n "$package_id" ]; then
+        print_status $GREEN "✓ Package ID: $package_id"
+        echo "$package_id"
+    else
+        print_status $RED "✗ Failed to get package ID"
         return 1
     fi
 }
@@ -198,6 +201,7 @@ approve_chaincode() {
     local approved=$("${FABRIC_BIN_PATH}/peer" lifecycle chaincode queryapproved \
         -C ${CHANNEL_NAME} \
         -n ${CHAINCODE_NAME} \
+        --sequence ${CHAINCODE_SEQUENCE} \
         --tls \
         --cafile "${orderer_tls_ca_path}" 2>&1 || echo "not_approved")
 

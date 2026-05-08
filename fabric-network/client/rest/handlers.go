@@ -3,8 +3,12 @@ package rest
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
+
+	"hlf-demo/fabric-network/client/fabric"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hyperledger/fabric-gateway/pkg/client"
@@ -17,6 +21,7 @@ type Asset struct {
 	Size           int    `json:"size"`
 	Owner          string `json:"owner"`
 	AppraisedValue int    `json:"appraisedValue"`
+	OwnerMSP       string `json:"ownerMSP,omitempty"`
 }
 
 // CreateAssetRequest represents the request to create a new asset
@@ -56,42 +61,77 @@ type FabricGateway interface {
 	EvaluateTransaction(function string, args ...string) ([]byte, error)
 	GetChannel() string
 	GetChaincode() string
+	GetConnectionProfile() *fabric.ConnectionProfile
 }
 
-// HealthCheck returns the health status of the API
-func HealthCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "healthy",
-		"service": "Fabric Client API",
-		"version": "1.0.0",
-	})
-}
-
-// GetAllAssets retrieves all assets from the ledger
-func GetAllAssets(gw FabricGateway) gin.HandlerFunc {
+// HealthCheck verifies ledger connectivity and returns health status.
+func HealthCheck(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		result, err := gw.EvaluateTransaction("GetAllAssets")
+		_, err := gw.EvaluateTransaction("GetAllAssets")
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to get all assets: %v", err),
+			slog.Error("health check failed", "error", err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":  "unhealthy",
+				"service": "Fabric Client API",
+				"error":   "ledger unreachable",
 			})
 			return
 		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "healthy",
+			"service": "Fabric Client API",
+			"version": "1.0.0",
+		})
+	}
+}
 
-		var assets []Asset
-		// Handle empty result gracefully
-		if len(result) == 0 {
-			assets = []Asset{}
-		} else if err := json.Unmarshal(result, &assets); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to unmarshal assets: %v", err),
-			})
+// PagedResult mirrors the chaincode PagedQueryResult
+type PagedResult struct {
+	Assets   []Asset `json:"assets"`
+	Bookmark string  `json:"bookmark"`
+}
+
+// GetAllAssets retrieves assets from the ledger with optional pagination.
+// Query params: pageSize (default 20, max 100), bookmark (cursor from previous response).
+func GetAllAssets(gw FabricGateway) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		cid, _ := c.Get("correlationID")
+
+		pageSize := c.DefaultQuery("pageSize", "20")
+		bookmark := c.DefaultQuery("bookmark", "")
+
+		pageSizeInt, err := strconv.Atoi(pageSize)
+		if err != nil || pageSizeInt <= 0 {
+			pageSizeInt = 20
+		}
+		if pageSizeInt > 100 {
+			pageSizeInt = 100
+		}
+
+		result, err := gw.EvaluateTransaction("GetAllAssetsPaged", strconv.Itoa(pageSizeInt), bookmark)
+		if err != nil {
+			slog.Error("GetAllAssets failed", "error", err, "correlation_id", cid)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve assets"})
 			return
+		}
+
+		var paged PagedResult
+		if len(result) == 0 {
+			paged = PagedResult{Assets: []Asset{}}
+		} else if err := json.Unmarshal(result, &paged); err != nil {
+			slog.Error("GetAllAssets unmarshal failed", "error", err, "correlation_id", cid)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse assets"})
+			return
+		}
+
+		if paged.Assets == nil {
+			paged.Assets = []Asset{}
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"assets": assets,
-			"count":  len(assets),
+			"assets":   paged.Assets,
+			"count":    len(paged.Assets),
+			"bookmark": paged.Bookmark,
 		})
 	}
 }
@@ -100,20 +140,27 @@ func GetAllAssets(gw FabricGateway) gin.HandlerFunc {
 func GetAsset(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateAssetID(id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
+		cid, _ := c.Get("correlationID")
 		result, err := gw.EvaluateTransaction("ReadAsset", id)
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": fmt.Sprintf("Failed to read asset: %v", err),
-			})
+			slog.Error("GetAsset failed", "id", id, "error", err, "correlation_id", cid)
+			if strings.Contains(err.Error(), "does not exist") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "asset not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve asset"})
 			return
 		}
 
 		var asset Asset
 		if err := json.Unmarshal(result, &asset); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to unmarshal asset: %v", err),
-			})
+			slog.Error("GetAsset unmarshal failed", "id", id, "error", err, "correlation_id", cid)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse asset"})
 			return
 		}
 
@@ -126,12 +173,15 @@ func CreateAsset(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req CreateAssetRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf("Invalid request: %v", err),
-			})
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
+			return
+		}
+		if err := validateAssetID(req.ID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
+		cid, _ := c.Get("correlationID")
 		_, err := gw.SubmitTransaction("CreateAsset",
 			req.ID,
 			req.Color,
@@ -140,16 +190,16 @@ func CreateAsset(gw FabricGateway) gin.HandlerFunc {
 			strconv.Itoa(req.AppraisedValue),
 		)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to create asset: %v", err),
-			})
+			slog.Error("CreateAsset failed", "id", req.ID, "error", err, "correlation_id", cid)
+			if strings.Contains(err.Error(), "already exists") {
+				c.JSON(http.StatusConflict, gin.H{"error": "asset already exists"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create asset"})
 			return
 		}
 
-		c.JSON(http.StatusCreated, gin.H{
-			"message": "Asset created successfully",
-			"assetID": req.ID,
-		})
+		c.JSON(http.StatusCreated, gin.H{"message": "asset created", "assetID": req.ID})
 	}
 }
 
@@ -157,15 +207,18 @@ func CreateAsset(gw FabricGateway) gin.HandlerFunc {
 func UpdateAsset(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-
-		var req UpdateAssetRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf("Invalid request: %v", err),
-			})
+		if err := validateAssetID(id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
+		var req UpdateAssetRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
+			return
+		}
+
+		cid, _ := c.Get("correlationID")
 		_, err := gw.SubmitTransaction("UpdateAsset",
 			id,
 			req.Color,
@@ -174,16 +227,16 @@ func UpdateAsset(gw FabricGateway) gin.HandlerFunc {
 			strconv.Itoa(req.AppraisedValue),
 		)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to update asset: %v", err),
-			})
+			slog.Error("UpdateAsset failed", "id", id, "error", err, "correlation_id", cid)
+			if strings.Contains(err.Error(), "does not exist") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "asset not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update asset"})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Asset updated successfully",
-			"assetID": id,
-		})
+		c.JSON(http.StatusOK, gin.H{"message": "asset updated", "assetID": id})
 	}
 }
 
@@ -191,19 +244,24 @@ func UpdateAsset(gw FabricGateway) gin.HandlerFunc {
 func DeleteAsset(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-
-		_, err := gw.SubmitTransaction("DeleteAsset", id)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to delete asset: %v", err),
-			})
+		if err := validateAssetID(id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Asset deleted successfully",
-			"assetID": id,
-		})
+		cid, _ := c.Get("correlationID")
+		_, err := gw.SubmitTransaction("DeleteAsset", id)
+		if err != nil {
+			slog.Error("DeleteAsset failed", "id", id, "error", err, "correlation_id", cid)
+			if strings.Contains(err.Error(), "does not exist") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "asset not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete asset"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "asset deleted", "assetID": id})
 	}
 }
 
@@ -211,28 +269,30 @@ func DeleteAsset(gw FabricGateway) gin.HandlerFunc {
 func TransferAsset(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateAssetID(id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
 		var req TransferAssetRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf("Invalid request: %v", err),
-			})
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
 			return
 		}
 
+		cid, _ := c.Get("correlationID")
 		_, err := gw.SubmitTransaction("TransferAsset", id, req.NewOwner)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to transfer asset: %v", err),
-			})
+			slog.Error("TransferAsset failed", "id", id, "error", err, "correlation_id", cid)
+			if strings.Contains(err.Error(), "does not exist") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "asset not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to transfer asset"})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"message":  "Asset transferred successfully",
-			"assetID":  id,
-			"newOwner": req.NewOwner,
-		})
+		c.JSON(http.StatusOK, gin.H{"message": "asset transferred", "assetID": id, "newOwner": req.NewOwner})
 	}
 }
 
@@ -240,30 +300,29 @@ func TransferAsset(gw FabricGateway) gin.HandlerFunc {
 func GetAssetHistory(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateAssetID(id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
+		cid, _ := c.Get("correlationID")
 		result, err := gw.EvaluateTransaction("GetAssetHistory", id)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to get asset history: %v", err),
-			})
+			slog.Error("GetAssetHistory failed", "id", id, "error", err, "correlation_id", cid)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve asset history"})
 			return
 		}
 
 		var history []AssetHistory
-		// Handle empty result gracefully
 		if len(result) == 0 {
 			history = []AssetHistory{}
 		} else if err := json.Unmarshal(result, &history); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to unmarshal asset history: %v", err),
-			})
+			slog.Error("GetAssetHistory unmarshal failed", "id", id, "error", err, "correlation_id", cid)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse asset history"})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"assetID": id,
-			"history": history,
-		})
+		c.JSON(http.StatusOK, gin.H{"assetID": id, "history": history})
 	}
 }
 
@@ -273,47 +332,42 @@ func GetAssetsByRange(gw FabricGateway) gin.HandlerFunc {
 		startKey := c.DefaultQuery("startKey", "")
 		endKey := c.DefaultQuery("endKey", "")
 
+		if len(startKey) > 256 || len(endKey) > 256 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "startKey and endKey max 256 chars"})
+			return
+		}
+
+		cid, _ := c.Get("correlationID")
 		result, err := gw.EvaluateTransaction("GetAssetByRange", startKey, endKey)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to get assets by range: %v", err),
-			})
+			slog.Error("GetAssetsByRange failed", "start", startKey, "end", endKey, "error", err, "correlation_id", cid)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve assets by range"})
 			return
 		}
 
 		var assets []Asset
-		// Handle empty result gracefully
 		if len(result) == 0 {
 			assets = []Asset{}
 		} else if err := json.Unmarshal(result, &assets); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to unmarshal assets: %v", err),
-			})
+			slog.Error("GetAssetsByRange unmarshal failed", "error", err, "correlation_id", cid)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse assets"})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"assets": assets,
 			"count":  len(assets),
-			"range": gin.H{
-				"start": startKey,
-				"end":   endKey,
-			},
+			"range":  gin.H{"start": startKey, "end": endKey},
 		})
 	}
 }
 
-// GetChannels retrieves information about available channels
+// GetChannels returns the channel this client is connected to.
 func GetChannels(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// This is a placeholder implementation
-		// In a real implementation, you would query the network for available channels
 		c.JSON(http.StatusOK, gin.H{
 			"channels": []gin.H{
-				{
-					"channel_id": gw.GetChannel(),
-					"status":     "active",
-				},
+				{"channel_id": gw.GetChannel(), "status": "active"},
 			},
 		})
 	}
@@ -377,75 +431,55 @@ func GetChaincodeInfo(gw FabricGateway) gin.HandlerFunc {
 	}
 }
 
-// GetPeers retrieves information about network peers
+// GetPeers retrieves peer information from the connection profile
 func GetPeers(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// This is a placeholder implementation
-		// In a real implementation, you would query the network for peer information
-		c.JSON(http.StatusOK, gin.H{
-			"peers": []gin.H{
-				{
-					"name":    "peer0.org1.example.com",
-					"address": "peer0.org1.example.com:7051",
-					"status":  "online",
-					"org":     "Org1",
-				},
-				{
-					"name":    "peer0.org2.example.com",
-					"address": "peer0.org2.example.com:9051",
-					"status":  "online",
-					"org":     "Org2",
-				},
-			},
-		})
+		cp := gw.GetConnectionProfile()
+		if cp == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "connection profile not loaded"})
+			return
+		}
+		var peers []gin.H
+		for name, peer := range cp.Peers {
+			peers = append(peers, gin.H{
+				"name":    name,
+				"address": peer.URL,
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"peers": peers})
 	}
 }
 
-// GetOrganizations retrieves information about network organizations
+// GetOrganizations retrieves organization information from the connection profile
 func GetOrganizations(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// This is a placeholder implementation
-		// In a real implementation, you would query the network for organization information
-		c.JSON(http.StatusOK, gin.H{
-			"organizations": []gin.H{
-				{
-					"name":  "Org1MSP",
-					"mspid": "Org1MSP",
-					"peers": []string{"peer0.org1.example.com"},
-				},
-				{
-					"name":  "Org2MSP",
-					"mspid": "Org2MSP",
-					"peers": []string{"peer0.org2.example.com"},
-				},
-			},
-		})
+		cp := gw.GetConnectionProfile()
+		if cp == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "connection profile not loaded"})
+			return
+		}
+		var orgs []gin.H
+		for name, org := range cp.Organizations {
+			orgs = append(orgs, gin.H{
+				"name":  name,
+				"mspid": org.MSPID,
+				"peers": org.Peers,
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"organizations": orgs})
 	}
 }
 
-// GetTransactions retrieves transaction information
+// GetTransactions is not implemented — Fabric Gateway SDK does not expose raw TX query.
 func GetTransactions(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// This is a placeholder implementation
-		// In a real implementation, you would query the ledger for transaction history
-		c.JSON(http.StatusOK, gin.H{
-			"transactions": []gin.H{},
-			"count":        0,
-		})
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "transaction history query not supported by Fabric Gateway SDK"})
 	}
 }
 
-// GetTransaction retrieves a specific transaction by ID
+// GetTransaction is not implemented — Fabric Gateway SDK does not expose raw TX lookup.
 func GetTransaction(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		txID := c.Param("txId")
-
-		// This is a placeholder implementation
-		// In a real implementation, you would query the ledger for transaction details
-		c.JSON(http.StatusOK, gin.H{
-			"txId":      txID,
-			"status":    "VALID",
-			"timestamp": "2023-01-01T00:00:00Z",
-		})
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "transaction lookup not supported by Fabric Gateway SDK"})
 	}
 }

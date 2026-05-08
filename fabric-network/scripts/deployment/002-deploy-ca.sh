@@ -89,6 +89,11 @@ intermediate:
 crl:
   expiry: 24h
 
+cfg:
+  identities:
+    passwordattempts: 10
+    allowremove: true
+
 registry:
   maxenrollments: -1
 
@@ -108,7 +113,7 @@ registry:
 
 database:
   type: postgres
-  datasource: host=${db_host} port=${db_port} user=${db_user} password=${db_pass} dbname=${db_name} sslmode=disable
+  datasource: host=${db_host} port=${db_port} user=${db_user} password=${db_pass} dbname=${db_name} sslmode=prefer
   tls:
       enabled: false
       certfiles:
@@ -323,9 +328,7 @@ if [ "$DEPLOY_ORG2" = true ]; then
     print_status $GREEN "✓ Org2 CA deployed successfully"
 fi
 
-# Wait for CA services to be ready
-print_status $YELLOW "Waiting for Fabric CA services to be ready..."
-sleep 15
+# verify_ca polls below — no fixed sleep needed
 
 # Verify CA services
 verify_ca() {

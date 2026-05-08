@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"hlf-demo/fabric-network/client/fabric"
+	"hlf-demo/fabric-network/client/middleware"
 	"hlf-demo/fabric-network/client/rest"
 
 	"github.com/gin-gonic/gin"
@@ -24,17 +26,20 @@ const (
 	defaultServerPort        = "8080"
 	defaultTLSCertPath       = "./crypto"
 	defaultConnectionProfile = "./crypto/connection-profile.yaml"
+	defaultCAURL             = "http://localhost:8054"
+	defaultCAName            = "ca-org1"
 )
 
 func main() {
-	// Initialize logger
-	logger := log.New(os.Stdout, "[Fabric-Client] ", log.LstdFlags|log.Lshortfile)
-	logger.Println("Starting Fabric Client Application...")
+	// Initialize structured logger
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	slog.Info("starting fabric client application")
 
 	// Load configuration
 	config, err := loadConfig()
 	if err != nil {
-		logger.Fatalf("Failed to load configuration: %v", err)
+		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
 	// Set Gin mode
@@ -51,11 +56,25 @@ func main() {
 		config.ConnectionProfile,
 	)
 	if err != nil {
-		logger.Fatalf("Failed to initialize Fabric gateway: %v", err)
+		slog.Error("failed to initialize fabric gateway", "error", err)
+		os.Exit(1)
 	}
 	defer fabricGateway.Close()
 
-	logger.Println("Successfully connected to Fabric gateway")
+	slog.Info("connected to fabric gateway")
+
+	// Initialize CA client (optional — warns if misconfigured, does not exit)
+	caClient, err := fabric.NewCAClient(
+		config.CAURL,
+		config.CAName,
+		config.CAAdminMSPDir,
+		config.MSPID,
+		config.WalletPath,
+	)
+	if err != nil {
+		slog.Warn("CA client not available — identity management endpoints disabled", "error", err)
+		caClient = nil
+	}
 
 	// Create Gin router
 	router := gin.New()
@@ -63,13 +82,18 @@ func main() {
 	// Middleware
 	router.Use(gin.Recovery())
 	router.Use(corsMiddleware())
+	router.Use(correlationIDMiddleware())
 	router.Use(requestLogger())
 
-	// Health check endpoint
-	router.GET("/health", rest.HealthCheck)
+	// Health check endpoint (no auth required)
+	router.GET("/health", rest.HealthCheck(fabricGateway))
 
-	// API v1 routes
+	// Auth endpoints (no JWT required)
+	router.POST("/api/v1/auth/login", rest.Login())
+
+	// API v1 routes — all protected by JWT
 	v1 := router.Group("/api/v1")
+	v1.Use(middleware.JWTMiddleware())
 	{
 		// Asset endpoints
 		assets := v1.Group("/assets")
@@ -112,6 +136,18 @@ func main() {
 			network.GET("/organizations", rest.GetOrganizations(fabricGateway))
 			network.GET("/connection-profile", getConnectionProfileHandler(fabricGateway))
 		}
+
+		// Identity endpoints (CA management) — only if CA client is available
+		if caClient != nil {
+			identities := v1.Group("/identities")
+			{
+				identities.GET("", rest.GetIdentities(caClient))
+				identities.GET("/:id", rest.GetIdentity(caClient))
+				identities.POST("/register", rest.RegisterIdentity(caClient))
+				identities.POST("/enroll", rest.EnrollIdentity(caClient, config.WalletPath))
+				identities.DELETE("/:id", rest.DeleteIdentity(caClient))
+			}
+		}
 	}
 
 	// Create HTTP server
@@ -125,9 +161,10 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		logger.Printf("Server starting on port %s...", config.Port)
+		slog.Info("server starting", "port", config.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatalf("Failed to start server: %v", err)
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -136,17 +173,18 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Println("Shutting down server...")
+	slog.Info("shutting down server")
 
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		logger.Fatalf("Server forced to shutdown: %v", err)
+		slog.Error("server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
 
-	logger.Println("Server stopped")
+	slog.Info("server stopped")
 }
 
 // Configuration structure
@@ -158,6 +196,10 @@ type Config struct {
 	Mode              string
 	TLSCertPath       string
 	ConnectionProfile string
+	CAURL             string
+	CAName            string
+	CAAdminMSPDir     string
+	MSPID             string
 }
 
 // loadConfig loads configuration from environment variables
@@ -170,6 +212,10 @@ func loadConfig() (*Config, error) {
 		Mode:              getEnv("GIN_MODE", "debug"),
 		TLSCertPath:       getEnv("TLS_CERT_PATH", defaultTLSCertPath),
 		ConnectionProfile: getEnv("CONNECTION_PROFILE", defaultConnectionProfile),
+		CAURL:             getEnv("CA_URL", defaultCAURL),
+		CAName:            getEnv("CA_NAME", defaultCAName),
+		CAAdminMSPDir:     getEnv("CA_ADMIN_MSP_DIR", "./crypto/admin-msp"),
+		MSPID:             getEnv("MSP_ID", "Org1MSP"),
 	}
 
 	// Validate required configuration
@@ -193,8 +239,9 @@ func getEnv(key, defaultValue string) string {
 
 // corsMiddleware handles CORS headers
 func corsMiddleware() gin.HandlerFunc {
+	allowedOrigin := getEnv("CORS_ALLOWED_ORIGIN", "http://localhost:3000")
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Origin", allowedOrigin)
 		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Header("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
@@ -298,32 +345,46 @@ func getCAInfo(cp *fabric.ConnectionProfile) []gin.H {
 	return cas
 }
 
-// requestLogger logs incoming requests
+// correlationIDMiddleware attaches a correlation ID to every request.
+// Reads X-Correlation-ID header or generates one; echoes it in the response.
+func correlationIDMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		cid := c.GetHeader("X-Correlation-ID")
+		if cid == "" {
+			cid = newCorrelationID()
+		}
+		c.Set("correlationID", cid)
+		c.Header("X-Correlation-ID", cid)
+		c.Next()
+	}
+}
+
+// newCorrelationID generates a random hex correlation ID.
+func newCorrelationID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
+// requestLogger logs incoming requests as structured JSON.
 func requestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
-		query := c.Request.URL.RawQuery
+		if q := c.Request.URL.RawQuery; q != "" {
+			path = path + "?" + q
+		}
 
 		c.Next()
 
-		latency := time.Since(start)
-		statusCode := c.Writer.Status()
-		clientIP := c.ClientIP()
-		method := c.Request.Method
-		userAgent := c.Request.UserAgent()
-
-		if query != "" {
-			path = path + "?" + query
-		}
-
-		log.Printf("[%s] %s | %d | %v | %s | %s",
-			method,
-			path,
-			statusCode,
-			latency,
-			clientIP,
-			userAgent,
+		cid, _ := c.Get("correlationID")
+		slog.Info("request",
+			"method", c.Request.Method,
+			"path", path,
+			"status", c.Writer.Status(),
+			"latency_ms", time.Since(start).Milliseconds(),
+			"ip", c.ClientIP(),
+			"correlation_id", cid,
 		)
 	}
 }
