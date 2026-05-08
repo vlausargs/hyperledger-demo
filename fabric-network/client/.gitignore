@@ -2,3 +2,4 @@
 /crypto-*
 fabric-client
 wallet
+wallet-*
