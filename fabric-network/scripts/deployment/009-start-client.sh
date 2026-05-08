@@ -43,6 +43,12 @@ echo ""
 # Verify prerequisites
 print_status $YELLOW "Verifying prerequisites..."
 
+# Prefer gvm go1.25.10 if available
+if [ -d "$HOME/.gvm/gos/go1.25.10/bin" ]; then
+    export GOROOT="$HOME/.gvm/gos/go1.25.10"
+    export PATH="$HOME/.gvm/gos/go1.25.10/bin:$PATH"
+fi
+
 # Check if Go is installed
 if ! command -v go &> /dev/null; then
     print_status $RED "Error: Go is not installed. Please install Go 1.19 or higher."

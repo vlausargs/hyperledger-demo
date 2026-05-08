@@ -198,11 +198,19 @@ cleanup_artifacts() {
         rm -rf "${PROJECT_ROOT}/client/crypto"
         print_status $GREEN "✓ Client crypto removed"
     fi
+    if [ -d "${PROJECT_ROOT}/fabric-network/client/crypto" ]; then
+        rm -rf "${PROJECT_ROOT}/fabric-network/client/crypto"
+        print_status $GREEN "✓ Client crypto (fabric-network) removed"
+    fi
 
     # Remove client wallet
     if [ -d "${PROJECT_ROOT}/client/wallet" ]; then
         rm -rf "${PROJECT_ROOT}/client/wallet"
         print_status $GREEN "✓ Client wallet removed"
+    fi
+    if [ -d "${PROJECT_ROOT}/fabric-network/client/wallet" ]; then
+        rm -rf "${PROJECT_ROOT}/fabric-network/client/wallet"
+        print_status $GREEN "✓ Client wallet (fabric-network) removed"
     fi
 
     # Remove docker-compose generated files
@@ -228,6 +236,10 @@ stop_client() {
     if [ -f "${PROJECT_ROOT}/client/fabric-client" ]; then
         rm -f "${PROJECT_ROOT}/client/fabric-client"
         print_status $GREEN "✓ Client binary removed"
+    fi
+    if [ -f "${PROJECT_ROOT}/fabric-network/client/fabric-client" ]; then
+        rm -f "${PROJECT_ROOT}/fabric-network/client/fabric-client"
+        print_status $GREEN "✓ Client binary (fabric-network) removed"
     fi
 }
 

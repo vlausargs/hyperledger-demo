@@ -192,8 +192,10 @@ func (c *CAClient) ListIdentities() ([]*IdentityInfo, error) {
 	return identities, nil
 }
 
-// RemoveIdentity removes an identity from the CA.
-func (c *CAClient) RemoveIdentity(name string) error {
+// RemoveIdentity removes an identity from the CA and deletes its local wallet
+// directory (walletDir/<name>) if it exists. walletDir may be empty to skip
+// local cleanup.
+func (c *CAClient) RemoveIdentity(name, walletDir string) error {
 	c.logger.Info("removing identity", "name", name)
 	_, adminID, err := c.newAdminClient()
 	if err != nil {
@@ -206,7 +208,18 @@ func (c *CAClient) RemoveIdentity(name string) error {
 	if err != nil {
 		return fmt.Errorf("remove identity failed: %w", err)
 	}
-	c.logger.Info("identity removed", "name", name)
+	c.logger.Info("identity removed from CA", "name", name)
+
+	if walletDir != "" {
+		walletEntry := filepath.Join(walletDir, name)
+		if _, statErr := os.Stat(walletEntry); statErr == nil {
+			if removeErr := os.RemoveAll(walletEntry); removeErr != nil {
+				c.logger.Warn("failed to remove wallet entry", "path", walletEntry, "error", removeErr)
+			} else {
+				c.logger.Info("wallet entry removed", "path", walletEntry)
+			}
+		}
+	}
 	return nil
 }
 

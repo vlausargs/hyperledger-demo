@@ -3,6 +3,7 @@ package rest
 import (
 	"log/slog"
 	"net/http"
+	"os"
 
 	"hlf-demo/fabric-network/client/fabric"
 
@@ -84,6 +85,8 @@ func RegisterIdentity(ca *fabric.CAClient) gin.HandlerFunc {
 }
 
 // EnrollIdentity handles POST /identities/enroll — enroll an identity and store cert/key.
+// Returns 409 if the identity is already enrolled (wallet entry exists).
+// To re-enroll, delete the identity first or call with force=true query param.
 func EnrollIdentity(ca *fabric.CAClient, walletPath string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		cid, _ := c.Get("correlationID")
@@ -92,6 +95,18 @@ func EnrollIdentity(ca *fabric.CAClient, walletPath string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		walletEntry := walletPath + "/" + req.Name
+		if _, err := os.Stat(walletEntry); err == nil && c.Query("force") != "true" {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":      "identity already enrolled",
+				"name":       req.Name,
+				"walletPath": walletEntry + "/msp",
+				"hint":       "add ?force=true to re-enroll and overwrite existing credentials",
+			})
+			return
+		}
+
 		enrolled, err := ca.EnrollIdentity(req.Name, req.Secret, walletPath)
 		if err != nil {
 			slog.Error("EnrollIdentity failed", "name", req.Name, "error", err, "correlation_id", cid)
@@ -107,12 +122,13 @@ func EnrollIdentity(ca *fabric.CAClient, walletPath string) gin.HandlerFunc {
 	}
 }
 
-// DeleteIdentity handles DELETE /identities/:id — remove an identity from the CA.
-func DeleteIdentity(ca *fabric.CAClient) gin.HandlerFunc {
+// DeleteIdentity handles DELETE /identities/:id — remove an identity from the CA
+// and delete its local wallet entry.
+func DeleteIdentity(ca *fabric.CAClient, walletPath string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		cid, _ := c.Get("correlationID")
 		name := c.Param("id")
-		if err := ca.RemoveIdentity(name); err != nil {
+		if err := ca.RemoveIdentity(name, walletPath); err != nil {
 			slog.Error("RemoveIdentity failed", "name", name, "error", err, "correlation_id", cid)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

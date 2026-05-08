@@ -145,7 +145,7 @@ func main() {
 				identities.GET("/:id", rest.GetIdentity(caClient))
 				identities.POST("/register", rest.RegisterIdentity(caClient))
 				identities.POST("/enroll", rest.EnrollIdentity(caClient, config.WalletPath))
-				identities.DELETE("/:id", rest.DeleteIdentity(caClient))
+				identities.DELETE("/:id", rest.DeleteIdentity(caClient, config.WalletPath))
 			}
 		}
 	}
