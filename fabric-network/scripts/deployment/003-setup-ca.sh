@@ -36,12 +36,14 @@ source "${PROJECT_ROOT}/.env"
 DEPLOY_ORDERER=${DEPLOY_ORDERER:-true}
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
+DEPLOY_ORG3=${DEPLOY_ORG3:-false}
 
 print_status $GREEN "=== Starting CA Identity Setup ==="
 print_status $YELLOW "Deployment Mode:"
 echo "  Orderer: $DEPLOY_ORDERER"
 echo "  Org1: $DEPLOY_ORG1"
 echo "  Org2: $DEPLOY_ORG2"
+echo "  Org3: $DEPLOY_ORG3"
 echo ""
 
 # Create organizations directory structure
@@ -53,6 +55,9 @@ mkdir -p "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/ca"
 mkdir -p "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers"
 mkdir -p "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/users"
 mkdir -p "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/ca"
+mkdir -p "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers"
+mkdir -p "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/users"
+mkdir -p "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/ca"
 
 # Function to get CA certificate
 get_ca_cert() {
@@ -166,6 +171,8 @@ get_external_host() {
         echo "${PEER0_ORG1_EXTERNAL_HOST}"
     elif [ "${org_domain}" = "${ORG2_DOMAIN}" ]; then
         echo "${PEER0_ORG2_EXTERNAL_HOST}"
+    elif [ "${org_domain}" = "${ORG3_DOMAIN}" ]; then
+        echo "${PEER0_ORG3_EXTERNAL_HOST}"
     else
         echo ""
     fi
@@ -446,6 +453,37 @@ if [ "$DEPLOY_ORG2" = true ]; then
     create_org_msp_structure "${org_type}" "${org_domain}" "${org2_peer_identity_dir}"
 fi
 
+# Setup Org3 CA identities
+if [ "$DEPLOY_ORG3" = true ]; then
+    print_status $YELLOW "=== Setting up Org3 CA Identities ==="
+
+    ca_name="${CA_ORG3_NAME}"
+    ca_url="localhost:${CA_ORG3_PORT}"
+    org_type="peer"
+    org_domain="${ORG3_DOMAIN}"
+
+    get_ca_cert "${ca_name}" "${ca_url}" "${org_type}" "${org_domain}"
+
+    ca_hostname="ca.${org_domain}"
+    bootstrap_admin_id="${ca_hostname}-admin"
+    bootstrap_admin_secret="${ca_hostname}-adminpw"
+    admin_home=$(enroll_bootstrap_admin "${ca_name}" "${ca_url}" "${bootstrap_admin_id}" "${bootstrap_admin_secret}" "${org_type}" "${org_domain}")
+
+    add_affiliation "${admin_home}" "org3" "${ca_name}"
+
+    register_identity "${admin_home}" "${ORG3_ADMIN_ENROLLMENT_ID}" "${ORG3_ADMIN_ENROLLMENT_SECRET}" "admin" "" "${ca_name}"
+    enroll_identity "${ca_name}" "${ca_url}" "${ORG3_ADMIN_ENROLLMENT_ID}" "${ORG3_ADMIN_ENROLLMENT_SECRET}" "user" "${org_type}" "${org_domain}"
+
+    register_identity "${admin_home}" "${ORG3_PEER_ENROLLMENT_ID}" "${ORG3_PEER_ENROLLMENT_SECRET}" "peer" "" "${ca_name}"
+    enroll_identity "${ca_name}" "${ca_url}" "${ORG3_PEER_ENROLLMENT_ID}" "${ORG3_PEER_ENROLLMENT_SECRET}" "peer" "${org_type}" "${org_domain}"
+
+    register_identity "${admin_home}" "${ORG3_USER_ENROLLMENT_ID}" "${ORG3_USER_ENROLLMENT_SECRET}" "client" "" "${ca_name}"
+    enroll_identity "${ca_name}" "${ca_url}" "${ORG3_USER_ENROLLMENT_ID}" "${ORG3_USER_ENROLLMENT_SECRET}" "user" "${org_type}" "${org_domain}"
+
+    org3_peer_identity_dir="${PROJECT_ROOT}/organizations/${org_type}Organizations/${org_domain}/peers/${ORG3_PEER_ENROLLMENT_ID}.${org_domain}"
+    create_org_msp_structure "${org_type}" "${org_domain}" "${org3_peer_identity_dir}"
+fi
+
 # Distribute TLS CA certificates between organizations for cross-org TLS communication
 print_status $YELLOW "=== Distributing TLS CA certificates between organizations ==="
 
@@ -481,23 +519,35 @@ regenerate_peer_ca_crt() {
     fi
 }
 
-# If both Org1 and Org2 are deployed, distribute TLS CA certificates between them
+# Distribute TLS CA certificates between all deployed peer organizations
+org1_tls_ca="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORG1_PORT}-ca-org1.pem"
+org2_tls_ca="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORG2_PORT}-ca-org2.pem"
+org3_tls_ca="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers/peer0.${ORG3_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORG3_PORT}-ca-org3.pem"
+
 if [ "$DEPLOY_ORG1" = true ] && [ "$DEPLOY_ORG2" = true ]; then
-    # Org1 TLS CA certificate path
-    org1_tls_ca="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORG1_PORT}-ca-org1.pem"
-
-    # Org2 TLS CA certificate path
-    org2_tls_ca="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/tlscacerts/tls-localhost-${CA_ORG2_PORT}-ca-org2.pem"
-
-    # Copy Org1 TLS CA to Org2 peers
-    print_status $YELLOW "Distributing Org1 TLS CA certificate to Org2 peers..."
+    print_status $YELLOW "Distributing Org1 TLS CA to Org2 peers..."
     copy_tls_ca_to_peer "${org1_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/tlscacerts" "Org1"
 
-    # Copy Org2 TLS CA to Org1 peers
-    print_status $YELLOW "Distributing Org2 TLS CA certificate to Org1 peers..."
+    print_status $YELLOW "Distributing Org2 TLS CA to Org1 peers..."
     copy_tls_ca_to_peer "${org2_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/tlscacerts" "Org2"
 
-    print_status $GREEN "✓ TLS CA certificates distributed between organizations"
+    print_status $GREEN "✓ Org1/Org2 TLS CA certificates distributed"
+fi
+
+if [ "$DEPLOY_ORG3" = true ]; then
+    if [ "$DEPLOY_ORG1" = true ]; then
+        print_status $YELLOW "Distributing Org3 TLS CA to Org1 peers..."
+        copy_tls_ca_to_peer "${org3_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/tlscacerts" "Org3"
+        print_status $YELLOW "Distributing Org1 TLS CA to Org3 peers..."
+        copy_tls_ca_to_peer "${org1_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers/peer0.${ORG3_DOMAIN}/tls/tlscacerts" "Org1"
+    fi
+    if [ "$DEPLOY_ORG2" = true ]; then
+        print_status $YELLOW "Distributing Org3 TLS CA to Org2 peers..."
+        copy_tls_ca_to_peer "${org3_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/tlscacerts" "Org3"
+        print_status $YELLOW "Distributing Org2 TLS CA to Org3 peers..."
+        copy_tls_ca_to_peer "${org2_tls_ca}" "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers/peer0.${ORG3_DOMAIN}/tls/tlscacerts" "Org2"
+    fi
+    print_status $GREEN "✓ Org3 TLS CA certificates distributed"
 fi
 
 # # Also distribute Orderer TLS CA to peer organizations for TLS communication with orderer
@@ -528,6 +578,11 @@ fi
 if [ "$DEPLOY_ORG2" = true ]; then
     peer2_tls_dir="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls"
     regenerate_peer_ca_crt "${peer2_tls_dir}" "peer0.${ORG2_DOMAIN}"
+fi
+
+if [ "$DEPLOY_ORG3" = true ]; then
+    peer3_tls_dir="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers/peer0.${ORG3_DOMAIN}/tls"
+    regenerate_peer_ca_crt "${peer3_tls_dir}" "peer0.${ORG3_DOMAIN}"
 fi
 
 print_status $GREEN "=== CA Identity Setup Completed Successfully ==="

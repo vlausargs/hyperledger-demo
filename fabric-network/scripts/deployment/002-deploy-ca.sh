@@ -41,12 +41,14 @@ CA_CSR_ORGANIZATIONAL_UNIT=${CA_CSR_ORGANIZATIONAL_UNIT:-"Fabric"}
 DEPLOY_ORDERER=${DEPLOY_ORDERER:-true}
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
+DEPLOY_ORG3=${DEPLOY_ORG3:-false}
 
 print_status $GREEN "=== Starting Fabric CA Deployment ==="
 print_status $YELLOW "Deployment Mode:"
 echo "  Orderer CA: $DEPLOY_ORDERER"
 echo "  Org1 CA: $DEPLOY_ORG1"
 echo "  Org2 CA: $DEPLOY_ORG2"
+echo "  Org3 CA: $DEPLOY_ORG3"
 echo ""
 
 print_status $YELLOW "CSR Configuration:"
@@ -135,6 +137,7 @@ affiliations:
    orderer:
    org1:
    org2:
+   org3:
 
 signing:
     default:
@@ -233,6 +236,7 @@ COMPOSE_DIR="${PROJECT_ROOT}/docker-compose/ca"
 mkdir -p "${CONFIG_DIR}/ca/orderer"
 mkdir -p "${CONFIG_DIR}/ca/org1"
 mkdir -p "${CONFIG_DIR}/ca/org2"
+mkdir -p "${CONFIG_DIR}/ca/org3"
 mkdir -p "${COMPOSE_DIR}"
 
 # Deploy Orderer CA
@@ -328,6 +332,35 @@ if [ "$DEPLOY_ORG2" = true ]; then
     print_status $GREEN "✓ Org2 CA deployed successfully"
 fi
 
+# Deploy Org3 CA
+if [ "$DEPLOY_ORG3" = true ]; then
+    print_status $YELLOW "Deploying Org3 CA..."
+
+    config_dir="${CONFIG_DIR}/ca/org3"
+    compose_file="${COMPOSE_DIR}/org3-ca.yml"
+
+    generate_ca_server_config \
+        "${CA_ORG3_NAME}" \
+        "${CA_ORG3_HOSTNAME}" \
+        "${config_dir}" \
+        "${POSTGRES_ORG3_HOST}" \
+        "${POSTGRES_ORG3_PORT}" \
+        "${POSTGRES_ORG3_USER}" \
+        "${POSTGRES_ORG3_PASSWORD}" \
+        "${POSTGRES_ORG3_DB}" \
+        "${CA_ORG3_PORT}"
+
+    create_ca_compose \
+        "${CA_ORG3_NAME}" \
+        "${CA_ORG3_HOSTNAME}" \
+        "${CA_ORG3_PORT}" \
+        "${config_dir}" \
+        "${compose_file}"
+
+    docker compose -f "$compose_file" up -d
+    print_status $GREEN "✓ Org3 CA deployed successfully"
+fi
+
 # verify_ca polls below — no fixed sleep needed
 
 # Verify CA services
@@ -367,6 +400,10 @@ fi
 
 if [ "$DEPLOY_ORG2" = true ]; then
     verify_ca "${CA_ORG2_NAME}" "${CA_ORG2_HOSTNAME}" "${CA_ORG2_PORT}"
+fi
+
+if [ "$DEPLOY_ORG3" = true ]; then
+    verify_ca "${CA_ORG3_NAME}" "${CA_ORG3_HOSTNAME}" "${CA_ORG3_PORT}"
 fi
 
 print_status $GREEN "=== Fabric CA Deployment Completed Successfully ==="

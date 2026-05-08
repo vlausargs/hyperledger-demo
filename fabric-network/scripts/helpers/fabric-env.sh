@@ -124,6 +124,9 @@ get_ca_url() {
         "${ORG2_DOMAIN}")
             echo "${CA_ORG2_HOSTNAME}:${CA_ORG2_PORT}"
             ;;
+        "${ORG3_DOMAIN}")
+            echo "${CA_ORG3_HOSTNAME}:${CA_ORG3_PORT}"
+            ;;
         *)
             echo ""
             ;;
@@ -140,6 +143,9 @@ get_peer_port() {
             ;;
         "${ORG2_DOMAIN}")
             echo "${PEER0_ORG2_PORT}"
+            ;;
+        "${ORG3_DOMAIN}")
+            echo "${PEER0_ORG3_PORT}"
             ;;
         *)
             echo ""
@@ -162,6 +168,9 @@ get_external_host() {
         "${ORG2_DOMAIN}")
             echo "${PEER0_ORG2_EXTERNAL_HOST}"
             ;;
+        "${ORG3_DOMAIN}")
+            echo "${PEER0_ORG3_EXTERNAL_HOST}"
+            ;;
         *)
             echo ""
             ;;
@@ -181,6 +190,9 @@ get_org_name() {
             ;;
         "${ORG2_DOMAIN}")
             echo "${ORG2_NAME}"
+            ;;
+        "${ORG3_DOMAIN}")
+            echo "${ORG3_NAME}"
             ;;
         *)
             echo ""
@@ -346,6 +358,7 @@ affiliations:
    orderer:
    org1:
    org2:
+   org3:
 
 signing:
     default:

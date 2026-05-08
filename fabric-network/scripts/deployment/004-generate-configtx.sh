@@ -36,12 +36,14 @@ source "${PROJECT_ROOT}/.env"
 DEPLOY_ORDERER=${DEPLOY_ORDERER:-true}
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
+DEPLOY_ORG3=${DEPLOY_ORG3:-false}
 
 print_status $GREEN "=== Starting Channel Configuration Generation ==="
 print_status $YELLOW "Deployment Mode:"
 echo "  Orderer: $DEPLOY_ORDERER"
 echo "  Org1: $DEPLOY_ORG1"
 echo "  Org2: $DEPLOY_ORG2"
+echo "  Org3: $DEPLOY_ORG3"
 echo ""
 print_status $YELLOW "Orderer Type: $ORDERER_TYPE"
 echo ""
@@ -174,6 +176,30 @@ Organizations:
             - Host: ${PEER0_ORG2_EXTERNAL_HOST}
               Port: ${PEER0_ORG2_PORT}
 
+    # ---------------------------------------------------------------------------
+    #   Peer Organization 3
+    # ---------------------------------------------------------------------------
+    - &Org3
+        Name: ${ORG3_NAME}
+        ID: ${ORG3_NAME}
+        MSPDir: ${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('${ORG3_NAME}.admin', '${ORG3_NAME}.peer', '${ORG3_NAME}.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('${ORG3_NAME}.admin', '${ORG3_NAME}.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('${ORG3_NAME}.admin')"
+            Endorsement:
+                Type: Signature
+                Rule: "OR('${ORG3_NAME}.member')"
+        AnchorPeers:
+            - Host: ${PEER0_ORG3_EXTERNAL_HOST}
+              Port: ${PEER0_ORG3_PORT}
+
 # ---------------------------------------------------------------------------
 #   Capabilities
 # ---------------------------------------------------------------------------
@@ -283,7 +309,7 @@ Channel: &ChannelDefaults
 Profiles:
 
     # ---------------------------------------------------------------------------
-    #   TwoOrgsOrdererGenesis
+    #   TwoOrgsOrdererGenesis (kept for backwards compatibility)
     # ---------------------------------------------------------------------------
     TwoOrgsOrdererGenesis:
         <<: *ChannelDefaults
@@ -298,7 +324,7 @@ Profiles:
                     - *Org2
 
     # ---------------------------------------------------------------------------
-    #   TwoOrgsChannel
+    #   TwoOrgsChannel (kept for backwards compatibility)
     # ---------------------------------------------------------------------------
     TwoOrgsChannel:
         Consortium: SampleConsortium
@@ -308,6 +334,35 @@ Profiles:
             Organizations:
                 - *Org1
                 - *Org2
+
+    # ---------------------------------------------------------------------------
+    #   ThreeOrgsOrdererGenesis
+    # ---------------------------------------------------------------------------
+    ThreeOrgsOrdererGenesis:
+        <<: *ChannelDefaults
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+        Consortiums:
+            SampleConsortium:
+                Organizations:
+                    - *Org1
+                    - *Org2
+                    - *Org3
+
+    # ---------------------------------------------------------------------------
+    #   ThreeOrgsChannel
+    # ---------------------------------------------------------------------------
+    ThreeOrgsChannel:
+        Consortium: SampleConsortium
+        <<: *ChannelDefaults
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+                - *Org2
+                - *Org3
 EOF
 
 print_status $GREEN "✓ configtx.yaml created successfully"
@@ -384,6 +439,24 @@ if [ "$DEPLOY_ORG2" = true ]; then
         print_status $GREEN "✓ Org2 anchor peer update generated successfully"
     else
         print_status $RED "✗ Failed to generate Org2 anchor peer update"
+        exit 1
+    fi
+fi
+
+if [ "$DEPLOY_ORG3" = true ]; then
+    print_status $YELLOW "Generating anchor peer update for Org3..."
+
+    configtxgen \
+        -profile ${CHANNEL_PROFILE} \
+        -channelID ${CHANNEL_NAME} \
+        -outputAnchorPeersUpdate "${PROJECT_ROOT}/config/channel-artifacts/${ORG3_NAME}anchors.tx" \
+        -asOrg ${ORG3_NAME} \
+        -configPath "${PROJECT_ROOT}/config/channel-artifacts"
+
+    if [ -f "${PROJECT_ROOT}/config/channel-artifacts/${ORG3_NAME}anchors.tx" ]; then
+        print_status $GREEN "✓ Org3 anchor peer update generated successfully"
+    else
+        print_status $RED "✗ Failed to generate Org3 anchor peer update"
         exit 1
     fi
 fi

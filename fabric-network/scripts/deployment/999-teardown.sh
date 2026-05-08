@@ -203,6 +203,12 @@ cleanup_artifacts() {
         print_status $GREEN "✓ Client crypto (fabric-network) removed"
     fi
 
+    # Remove Org3 CA Config
+    if [ -d "${PROJECT_ROOT}/config/ca/org3" ]; then
+        rm -rf "${PROJECT_ROOT}/config/ca/org3"
+        print_status $GREEN "✓ Org3 CA Config removed"
+    fi
+
     # Remove client wallet
     if [ -d "${PROJECT_ROOT}/client/wallet" ]; then
         rm -rf "${PROJECT_ROOT}/client/wallet"

@@ -40,11 +40,13 @@ verify_binaries
 # Check deployment flags
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
+DEPLOY_ORG3=${DEPLOY_ORG3:-false}
 
 print_status $GREEN "=== Starting Chaincode Deployment ==="
 print_status $YELLOW "Deployment Mode:"
 echo "  Org1: $DEPLOY_ORG1"
 echo "  Org2: $DEPLOY_ORG2"
+echo "  Org3: $DEPLOY_ORG3"
 echo ""
 
 # Verify prerequisites
@@ -283,25 +285,26 @@ commit_chaincode() {
     local org2_tls_cert=""
 
     # Determine which peer to use for committing and set up TLS cert paths
+    local org3_tls_cert=""
     if [ "$DEPLOY_ORG1" = true ]; then
         org_domain="${ORG1_DOMAIN}"
         org_name="${ORG1_NAME}"
-
-        # Use local paths for TLS CA certificates
         org1_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt"
-
         if [ "$DEPLOY_ORG2" = true ]; then
             org2_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt"
+        fi
+        if [ "$DEPLOY_ORG3" = true ]; then
+            org3_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers/peer0.${ORG3_DOMAIN}/tls/ca.crt"
         fi
     elif [ "$DEPLOY_ORG2" = true ]; then
         org_domain="${ORG2_DOMAIN}"
         org_name="${ORG2_NAME}"
-
-        # Use local paths for TLS CA certificates
         org2_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt"
-
         if [ "$DEPLOY_ORG1" = true ]; then
             org1_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt"
+        fi
+        if [ "$DEPLOY_ORG3" = true ]; then
+            org3_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers/peer0.${ORG3_DOMAIN}/tls/ca.crt"
         fi
     else
         print_status $RED "Error: No organization deployed to commit chaincode"
@@ -342,6 +345,11 @@ commit_chaincode() {
     if [ "$DEPLOY_ORG2" = true ]; then
         commit_cmd="${commit_cmd} --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT}"
         commit_cmd="${commit_cmd} --tlsRootCertFiles \"${org2_tls_cert}\""
+    fi
+
+    if [ "$DEPLOY_ORG3" = true ]; then
+        commit_cmd="${commit_cmd} --peerAddresses peer0.${ORG3_DOMAIN}:${PEER0_ORG3_PORT}"
+        commit_cmd="${commit_cmd} --tlsRootCertFiles \"${org3_tls_cert}\""
     fi
 
     eval "$commit_cmd"
@@ -430,6 +438,13 @@ if [ "$DEPLOY_ORG2" = true ]; then
     fi
 fi
 
+if [ "$DEPLOY_ORG3" = true ]; then
+    pkg_id=$(install_chaincode "${ORG3_DOMAIN}" "${ORG3_NAME}" "${CHAINCODE_NAME}.tar.gz")
+    if [ $? -eq 0 ] && [ -n "$pkg_id" ]; then
+        PACKAGE_IDS+=("$pkg_id")
+    fi
+fi
+
 # Use the first package ID for approval
 if [ ${#PACKAGE_IDS[@]} -gt 0 ]; then
     PACKAGE_ID="${PACKAGE_IDS[0]}"
@@ -450,6 +465,10 @@ if [ "$DEPLOY_ORG2" = true ]; then
     approve_chaincode "${ORG2_DOMAIN}" "${ORG2_NAME}" "$PACKAGE_ID"
 fi
 
+if [ "$DEPLOY_ORG3" = true ]; then
+    approve_chaincode "${ORG3_DOMAIN}" "${ORG3_NAME}" "$PACKAGE_ID"
+fi
+
 check_commit_readiness
 # Wait for approvals to propagate
 print_status $YELLOW "Waiting for approvals to propagate..."
@@ -465,16 +484,19 @@ query_committed
 print_status $YELLOW "Initializing chaincode..."
 
 if [ "$DEPLOY_ORG1" = true ]; then
-    # Set up environment variables for local peer binary
     peer_name="peer0"
     msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp"
     tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/${peer_name}.${ORG1_DOMAIN}/tls"
     orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
     org1_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt"
     org2_tls_cert=""
+    org3_tls_cert=""
 
     if [ "$DEPLOY_ORG2" = true ]; then
         org2_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt"
+    fi
+    if [ "$DEPLOY_ORG3" = true ]; then
+        org3_tls_cert="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers/peer0.${ORG3_DOMAIN}/tls/ca.crt"
     fi
 
     export CORE_PEER_ID="peer0.${ORG1_DOMAIN}"
@@ -487,7 +509,7 @@ if [ "$DEPLOY_ORG1" = true ]; then
     initialized=$("${FABRIC_BIN_PATH}/peer" chaincode query \
         -C ${CHANNEL_NAME} \
         -n ${CHAINCODE_NAME} \
-        -c '{"Args":["GetAllAssets"]}' \
+        -c '{"Args":["GetAllProducts","1",""]}' \
         --tls \
         --cafile "${orderer_tls_ca_path}" 2>&1 || echo "not_initialized")
 
@@ -496,7 +518,6 @@ if [ "$DEPLOY_ORG1" = true ]; then
     else
         print_status $YELLOW "Initializing chaincode ledger..."
 
-        # Build invoke command with appropriate peer addresses
         local invoke_cmd="${FABRIC_BIN_PATH}/peer chaincode invoke \
             -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} \
             -C ${CHANNEL_NAME} \
@@ -512,6 +533,11 @@ if [ "$DEPLOY_ORG1" = true ]; then
             invoke_cmd="${invoke_cmd} --tlsRootCertFiles \"${org2_tls_cert}\""
         fi
 
+        if [ "$DEPLOY_ORG3" = true ]; then
+            invoke_cmd="${invoke_cmd} --peerAddresses peer0.${ORG3_DOMAIN}:${PEER0_ORG3_PORT}"
+            invoke_cmd="${invoke_cmd} --tlsRootCertFiles \"${org3_tls_cert}\""
+        fi
+
         eval "$invoke_cmd"
 
         if [ $? -eq 0 ]; then
@@ -525,29 +551,17 @@ fi
 # Display useful commands
 print_status $YELLOW "=== Useful Commands ==="
 echo ""
-echo "  Query all assets:"
+echo "  Query all products:"
 echo "    export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
 echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
 echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
-echo "    ${FABRIC_BIN_PATH}/peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"GetAllAssets\"]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
+echo "    ${FABRIC_BIN_PATH}/peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"GetAllProducts\",\"10\",\"\"]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
 echo ""
-echo "  Create asset:"
-echo "    export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
-echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
-echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
-echo "    ${FABRIC_BIN_PATH}/peer chaincode invoke -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"CreateAsset\",\"asset7\",\"purple\",20,\"Owner\",800]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt'"
+echo "  Create product (Org1 only):"
+echo "    ${FABRIC_BIN_PATH}/peer chaincode invoke -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"CreateProduct\",\"PROD-100\",\"SKU-100\",\"Test Product\",\"Description\",\"BATCH-001\",\"Acme Mfg\",\"\",\"\"]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG3_DOMAIN}:${PEER0_ORG3_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers/peer0.${ORG3_DOMAIN}/tls/ca.crt'"
 echo ""
-echo "  Read asset:"
-echo "    export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
-echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
-echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
-echo "    ${FABRIC_BIN_PATH}/peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"ReadAsset\",\"asset1\"]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
-echo ""
-echo "  Transfer asset:"
-echo "    export CORE_PEER_LOCALMSPID='${ORG1_NAME}'"
-echo "    export CORE_PEER_TLS_ROOTCERT_FILE='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt'"
-echo "    export CORE_PEER_MSPCONFIGPATH='${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/admin.${ORG1_DOMAIN}/msp'"
-echo "    ${FABRIC_BIN_PATH}/peer chaincode invoke -o ${ORDERER_EXTERNAL_HOST}:${ORDERER_PORT} -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"TransferAsset\",\"asset1\",\"NewOwner\"]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt' --peerAddresses peer0.${ORG2_DOMAIN}:${PEER0_ORG2_PORT} --tlsRootCertFiles '${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/peers/peer0.${ORG2_DOMAIN}/tls/ca.crt'"
+echo "  Read product:"
+echo "    ${FABRIC_BIN_PATH}/peer chaincode query -C ${CHANNEL_NAME} -n ${CHAINCODE_NAME} -c '{\"Args\":[\"ReadProduct\",\"PROD-001\"]}' --tls --cafile '${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt'"
 echo ""
 
 print_status $GREEN "=== Chaincode Deployment Completed Successfully ==="

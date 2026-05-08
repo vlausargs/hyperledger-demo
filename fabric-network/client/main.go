@@ -95,17 +95,47 @@ func main() {
 	v1 := router.Group("/api/v1")
 	v1.Use(middleware.JWTMiddleware())
 	{
-		// Asset endpoints
-		assets := v1.Group("/assets")
+		// Product endpoints (Manufacturer creates, all orgs read)
+		products := v1.Group("/products")
 		{
-			assets.GET("", rest.GetAllAssets(fabricGateway))
-			assets.GET("/:id", rest.GetAsset(fabricGateway))
-			assets.POST("", rest.CreateAsset(fabricGateway))
-			assets.PUT("/:id", rest.UpdateAsset(fabricGateway))
-			assets.DELETE("/:id", rest.DeleteAsset(fabricGateway))
-			assets.POST("/:id/transfer", rest.TransferAsset(fabricGateway))
-			assets.GET("/:id/history", rest.GetAssetHistory(fabricGateway))
-			assets.GET("/range", rest.GetAssetsByRange(fabricGateway))
+			products.GET("", rest.GetAllProducts(fabricGateway))
+			products.POST("", rest.CreateProduct(fabricGateway))
+			products.GET("/batch/:batchId", rest.GetProductsByBatch(fabricGateway))
+			products.GET("/status/:status", rest.GetProductsByStatus(fabricGateway))
+			products.GET("/:id", rest.GetProduct(fabricGateway))
+			products.PUT("/:id", rest.UpdateProduct(fabricGateway))
+			products.GET("/:id/history", rest.GetProductHistory(fabricGateway))
+			products.GET("/:id/provenance", rest.GetProductProvenance(fabricGateway))
+		}
+
+		// Shipment endpoints
+		shipments := v1.Group("/shipments")
+		{
+			shipments.GET("", rest.GetAllShipments(fabricGateway))
+			shipments.POST("", rest.CreateShipment(fabricGateway))
+			shipments.GET("/status/:status", rest.GetShipmentsByStatus(fabricGateway))
+			shipments.GET("/:id", rest.GetShipment(fabricGateway))
+			shipments.POST("/:id/dispatch", rest.DispatchShipment(fabricGateway))
+			shipments.GET("/:id/history", rest.GetShipmentHistory(fabricGateway))
+			shipments.GET("/:id/custody", rest.GetCustodyChain(fabricGateway))
+			shipments.POST("/:id/custody/initiate", rest.InitiateCustodyTransfer(fabricGateway))
+			shipments.POST("/:id/custody/accept", rest.AcceptCustodyTransfer(fabricGateway))
+			shipments.POST("/:id/custody/reject", rest.RejectCustodyTransfer(fabricGateway))
+		}
+
+		// Event endpoints
+		events := v1.Group("/events")
+		{
+			events.POST("", rest.LogEvent(fabricGateway))
+			events.GET("/:targetId", rest.GetEvents(fabricGateway))
+		}
+
+		// Recall endpoints
+		recalls := v1.Group("/recalls")
+		{
+			recalls.POST("", rest.IssueRecall(fabricGateway))
+			recalls.GET("/products", rest.GetRecalledProducts(fabricGateway))
+			recalls.GET("/:id", rest.ReadRecall(fabricGateway))
 		}
 
 		// Channel endpoints

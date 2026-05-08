@@ -39,12 +39,14 @@ export FABRIC_CFG_PATH="${FABRIC_CONFIG_PATH}"
 DEPLOY_ORDERER=${DEPLOY_ORDERER:-true}
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
+DEPLOY_ORG3=${DEPLOY_ORG3:-false}
 
 print_status $GREEN "=== Starting Channel Creation and Join ==="
 print_status $YELLOW "Deployment Mode:"
 echo "  Orderer: $DEPLOY_ORDERER"
 echo "  Org1: $DEPLOY_ORG1"
 echo "  Org2: $DEPLOY_ORG2"
+echo "  Org3: $DEPLOY_ORG3"
 echo ""
 
 # Verify prerequisites
@@ -282,7 +284,6 @@ if [ "$DEPLOY_ORG1" = true ]; then
 fi
 
 if [ "$DEPLOY_ORG2" = true ]; then
-    # Check if peer is already joined by setting up environment and checking channel list
     export CORE_PEER_ID="peer0.${ORG2_DOMAIN}"
     export CORE_PEER_ADDRESS="${PEER0_ORG2_EXTERNAL_HOST}:${PEER0_ORG2_PORT}"
     export CORE_PEER_LOCALMSPID="${ORG2_NAME}"
@@ -294,11 +295,27 @@ if [ "$DEPLOY_ORG2" = true ]; then
 
     if ! "${FABRIC_BIN_PATH}/peer" channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
         join_channel "${ORG2_DOMAIN}" "${ORG2_NAME}"
-
-        # Update anchor peer
         update_anchor_peer "${ORG2_DOMAIN}" "${ORG2_NAME}" "${ORG2_DOMAIN}" "${ORG2_NAME}anchors.tx"
     else
         print_status $YELLOW "Peer from ${ORG2_DOMAIN} already joined to channel '${CHANNEL_NAME}'"
+    fi
+fi
+
+if [ "$DEPLOY_ORG3" = true ]; then
+    export CORE_PEER_ID="peer0.${ORG3_DOMAIN}"
+    export CORE_PEER_ADDRESS="${PEER0_ORG3_EXTERNAL_HOST}:${PEER0_ORG3_PORT}"
+    export CORE_PEER_LOCALMSPID="${ORG3_NAME}"
+    msp_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/users/admin.${ORG3_DOMAIN}/msp"
+    tls_path="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/peers/peer0.${ORG3_DOMAIN}/tls"
+    orderer_tls_ca_path="${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/orderers/orderer1.${ORDERER_DOMAIN}/tls/ca.crt"
+    export CORE_PEER_TLS_ROOTCERT_FILE="${tls_path}/ca.crt"
+    export CORE_PEER_MSPCONFIGPATH="${msp_path}"
+
+    if ! "${FABRIC_BIN_PATH}/peer" channel list 2>&1 | grep -q "${CHANNEL_NAME}"; then
+        join_channel "${ORG3_DOMAIN}" "${ORG3_NAME}"
+        update_anchor_peer "${ORG3_DOMAIN}" "${ORG3_NAME}" "${ORG3_DOMAIN}" "${ORG3_NAME}anchors.tx"
+    else
+        print_status $YELLOW "Peer from ${ORG3_DOMAIN} already joined to channel '${CHANNEL_NAME}'"
     fi
 fi
 
@@ -311,6 +328,10 @@ fi
 
 if [ "$DEPLOY_ORG2" = true ]; then
     list_channels "${ORG2_DOMAIN}" "${ORG2_NAME}"
+fi
+
+if [ "$DEPLOY_ORG3" = true ]; then
+    list_channels "${ORG3_DOMAIN}" "${ORG3_NAME}"
 fi
 
 # Get channel info

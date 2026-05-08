@@ -1,0 +1,8 @@
+{
+  "index": {
+    "fields": ["docType", "targetId"]
+  },
+  "ddoc": "indexEventByTargetDoc",
+  "name": "indexEventByTarget",
+  "type": "json"
+}

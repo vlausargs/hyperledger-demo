@@ -36,11 +36,13 @@ source "${PROJECT_ROOT}/.env"
 # Check deployment flags
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
+DEPLOY_ORG3=${DEPLOY_ORG3:-false}
 
 print_status $GREEN "=== Starting Peer Deployment ==="
 print_status $YELLOW "Deployment Mode:"
 echo "  Org1: $DEPLOY_ORG1"
 echo "  Org2: $DEPLOY_ORG2"
+echo "  Org3: $DEPLOY_ORG3"
 echo ""
 
 # Function to generate CouchDB configuration file
@@ -466,6 +468,22 @@ if [ "$DEPLOY_ORG2" = true ]; then
         "${PROJECT_ROOT}/docker-compose/org2/peer.yml"
 fi
 
+# Deploy Org3 Peer
+if [ "$DEPLOY_ORG3" = true ]; then
+    deploy_peer \
+        "${ORG3_DOMAIN}" \
+        "${ORG3_NAME}" \
+        "peer0" \
+        "${PEER0_ORG3_PORT}" \
+        "${PEER0_ORG3_SSL_PORT}" \
+        "${COUCHDB_ORG3_PORT}" \
+        "${COUCHDB_ORG3_USER}" \
+        "${COUCHDB_ORG3_PASSWORD}" \
+        "${PEER0_ORG3_METRICS_PORT}" \
+        "${PEER0_ORG3_PROFILE_PORT}" \
+        "${PROJECT_ROOT}/docker-compose/org3/peer.yml"
+fi
+
 sleep 20;
 if [ "$DEPLOY_ORG1" = true ]; then
     # Check if peer is listening on the correct ports
@@ -479,13 +497,23 @@ if [ "$DEPLOY_ORG1" = true ]; then
     fi
 fi
 if [ "$DEPLOY_ORG2" = true ]; then
-    # Check if peer is listening on the correct ports
     print_status $YELLOW "Checking ${ORG2_COMMON_NAME} network connectivity..."
 
     if netstat -tlnp 2>&1 | grep -q ":${PEER0_ORG2_PORT}" || ss -tlnp 2>&1 | grep -q ":${PEER0_ORG2_PORT}"; then
         print_status $GREEN "✓ ${ORG2_COMMON_NAME} listening on port ${PEER0_ORG2_PORT}"
     else
         print_status $RED "✗ ${ORG2_COMMON_NAME} not listening on port ${PEER0_ORG2_PORT}"
+        exit 1
+    fi
+fi
+
+if [ "$DEPLOY_ORG3" = true ]; then
+    print_status $YELLOW "Checking ${ORG3_COMMON_NAME} network connectivity..."
+
+    if netstat -tlnp 2>&1 | grep -q ":${PEER0_ORG3_PORT}" || ss -tlnp 2>&1 | grep -q ":${PEER0_ORG3_PORT}"; then
+        print_status $GREEN "✓ ${ORG3_COMMON_NAME} listening on port ${PEER0_ORG3_PORT}"
+    else
+        print_status $RED "✗ ${ORG3_COMMON_NAME} not listening on port ${PEER0_ORG3_PORT}"
         exit 1
     fi
 fi
@@ -512,6 +540,17 @@ if [ "$DEPLOY_ORG2" = true ]; then
     echo "    Chaincode Port: ${PEER0_ORG2_SSL_PORT}"
     echo "    CouchDB Port: ${COUCHDB_ORG2_PORT}"
     echo "    Domain: ${ORG2_DOMAIN}"
+    echo ""
+fi
+
+if [ "$DEPLOY_ORG3" = true ]; then
+    echo "  Org3 Peer:"
+    echo "    Container Name: peer0.${ORG3_DOMAIN}"
+    echo "    MSP ID: ${ORG3_NAME}"
+    echo "    Listen Address: 0.0.0.0:${PEER0_ORG3_PORT}"
+    echo "    Chaincode Port: ${PEER0_ORG3_SSL_PORT}"
+    echo "    CouchDB Port: ${COUCHDB_ORG3_PORT}"
+    echo "    Domain: ${ORG3_DOMAIN}"
     echo ""
 fi
 

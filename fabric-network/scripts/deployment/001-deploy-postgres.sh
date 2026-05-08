@@ -33,12 +33,14 @@ source "${PROJECT_ROOT}/.env"
 DEPLOY_ORDERER=${DEPLOY_ORDERER:-true}
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
+DEPLOY_ORG3=${DEPLOY_ORG3:-false}
 
 print_status $GREEN "=== Starting PostgreSQL Deployment ==="
 print_status $YELLOW "Deployment Mode:"
 echo "  Orderer: $DEPLOY_ORDERER"
 echo "  Org1: $DEPLOY_ORG1"
 echo "  Org2: $DEPLOY_ORG2"
+echo "  Org3: $DEPLOY_ORG3"
 echo ""
 
 # Function to create docker-compose file for PostgreSQL
@@ -135,6 +137,23 @@ if [ "$DEPLOY_ORG2" = true ]; then
     print_status $GREEN "✓ Org2 PostgreSQL deployed successfully"
 fi
 
+# Deploy Org3 PostgreSQL
+if [ "$DEPLOY_ORG3" = true ]; then
+    print_status $YELLOW "Deploying PostgreSQL for Org3 CA..."
+
+    compose_file="${PROJECT_ROOT}/docker-compose/postgres/org3-postgres.yml"
+    create_postgres_compose \
+        "${POSTGRES_ORG3_HOST}" \
+        "${POSTGRES_ORG3_PORT}" \
+        "${POSTGRES_ORG3_USER}" \
+        "${POSTGRES_ORG3_PASSWORD}" \
+        "${POSTGRES_ORG3_DB}" \
+        "$compose_file"
+
+    docker compose -f "$compose_file" up -d
+    print_status $GREEN "✓ Org3 PostgreSQL deployed successfully"
+fi
+
 # Wait for databases to be ready
 print_status $YELLOW "Waiting for PostgreSQL databases to be ready..."
 sleep 10
@@ -178,6 +197,10 @@ fi
 
 if [ "$DEPLOY_ORG2" = true ]; then
     verify_database "${POSTGRES_ORG2_HOST}" "${POSTGRES_ORG2_PORT}" "${POSTGRES_ORG2_USER}" "${POSTGRES_ORG2_PASSWORD}" "${POSTGRES_ORG2_DB}"
+fi
+
+if [ "$DEPLOY_ORG3" = true ]; then
+    verify_database "${POSTGRES_ORG3_HOST}" "${POSTGRES_ORG3_PORT}" "${POSTGRES_ORG3_USER}" "${POSTGRES_ORG3_PASSWORD}" "${POSTGRES_ORG3_DB}"
 fi
 
 print_status $GREEN "=== PostgreSQL Deployment Completed Successfully ==="
