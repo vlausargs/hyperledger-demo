@@ -128,9 +128,9 @@ registry:
           hf.Registrar.Attributes: "*"
           hf.AffiliationMgr: true
 
-database:
+db:
   type: postgres
-  datasource: host=${db_host} port=${db_port} user=${db_user} password=${db_pass} dbname=${db_name} sslmode=prefer
+  datasource: host=${db_host} port=${db_port} user=${db_user} password='${db_pass}' dbname=${db_name} sslmode=prefer
   tls:
       enabled: false
       certfiles:
