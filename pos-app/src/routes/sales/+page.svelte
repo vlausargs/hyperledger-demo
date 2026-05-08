@@ -62,14 +62,14 @@
     </thead>
     <tbody>
       {#each sales as s}
-        <tr>
-          <td>{s.id}</td>
-          <td>{s.customerId}</td>
-          <td>{s.cashierName}</td>
-          <td class="right">{s.totalAmount?.toLocaleString('id-ID')}</td>
-          <td>{new Date(s.createdAt).toLocaleString('id-ID')}</td>
-          <td><a href="/sales/{s.id}">View</a></td>
-        </tr>
+      <tr>
+        <td>{s.id}</td>
+        <td>{s.customerId}</td>
+        <td>{s.cashierName}</td>
+        <td class="right">{s.totalAmount?.toLocaleString('id-ID')}</td>
+        <td>{new Date(s.createdAt).toLocaleString('id-ID')}</td>
+        <td><a href="/sales/{s.id}">View</a></td>
+      </tr>
       {/each}
     </tbody>
   </table>

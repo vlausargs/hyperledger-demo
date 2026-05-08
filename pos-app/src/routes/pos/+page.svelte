@@ -1,6 +1,6 @@
 <script>
   import { nanoid } from 'nanoid';
-  import { cart, customerId, cartSubTotal, taxAmount, grandTotal, clearCart, cashierId, cashierName } from '$lib/stores.js';
+  import { cart, customerId, taxAmount, grandTotal, clearCart, cashierId, cashierName } from '$lib/stores.js';
   import { api } from '$lib/api.js';
   import ScanInput from '$lib/components/ScanInput.svelte';
   import VerifyModal from '$lib/components/VerifyModal.svelte';

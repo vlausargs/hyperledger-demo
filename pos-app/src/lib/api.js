@@ -1,8 +1,13 @@
 const BASE = '/api/v1';
 
 function authHeader() {
-  const token = localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  try {
+    const raw = localStorage.getItem('token');
+    const token = raw ? JSON.parse(raw) : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
 }
 
 async function request(method, path, body) {

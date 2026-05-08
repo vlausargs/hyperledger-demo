@@ -34,12 +34,12 @@
     </thead>
     <tbody>
       {#each items as item}
-        <tr>
-          <td>{item.sku}</td>
-          <td>{item.name}</td>
-          <td class="right">{item.count}</td>
-          <td class="ids">{item.productIds.join(', ')}</td>
-        </tr>
+      <tr>
+        <td>{item.sku}</td>
+        <td>{item.name}</td>
+        <td class="right">{item.count}</td>
+        <td class="ids">{item.productIds.join(', ')}</td>
+      </tr>
       {/each}
     </tbody>
   </table>

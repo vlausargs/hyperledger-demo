@@ -43,13 +43,15 @@
       {/if}
 
       <table>
-        <tr><th>ID</th><td>{product.id}</td></tr>
-        <tr><th>SKU</th><td>{product.sku}</td></tr>
-        <tr><th>Name</th><td>{product.name}</td></tr>
-        <tr><th>Batch</th><td>{product.batchId}</td></tr>
-        <tr><th>Manufacturer</th><td>{product.manufacturerName}</td></tr>
-        <tr><th>Owner</th><td>{product.currentOwnerMSP}</td></tr>
-        <tr><th>Status</th><td>{product.status}</td></tr>
+        <tbody>
+          <tr><th>ID</th><td>{product.id}</td></tr>
+          <tr><th>SKU</th><td>{product.sku}</td></tr>
+          <tr><th>Name</th><td>{product.name}</td></tr>
+          <tr><th>Batch</th><td>{product.batchId}</td></tr>
+          <tr><th>Manufacturer</th><td>{product.manufacturerName}</td></tr>
+          <tr><th>Owner</th><td>{product.currentOwnerMSP}</td></tr>
+          <tr><th>Status</th><td>{product.status}</td></tr>
+        </tbody>
       </table>
 
       {#if isAvailable && !isRecalled}
