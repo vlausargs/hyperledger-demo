@@ -21,3 +21,4 @@ func validateProductID(id string) error  { return validateID("product", id) }
 func validateShipmentID(id string) error { return validateID("shipment", id) }
 func validateEventID(id string) error    { return validateID("event", id) }
 func validateRecallID(id string) error   { return validateID("recall", id) }
+func validateSaleID(id string) error     { return validateID("sale", id) }

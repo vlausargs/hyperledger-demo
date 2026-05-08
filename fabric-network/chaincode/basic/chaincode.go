@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ const (
 	ProductStatusDelivered = "DELIVERED"
 	ProductStatusRecalled  = "RECALLED"
 	ProductStatusScrapped  = "SCRAPPED"
+	ProductStatusSold      = "SOLD"
 
 	ShipmentStatusDraft     = "DRAFT"
 	ShipmentStatusInTransit = "IN_TRANSIT"
@@ -56,6 +58,7 @@ const (
 	prefixCustody  = "CUSTODY~"
 	prefixEvent    = "EVENT~"
 	prefixRecall   = "RECALL~"
+	prefixSale     = "SALE~"
 )
 
 // ── Data models ───────────────────────────────────────────────────────────────
@@ -149,6 +152,37 @@ type RecallNotice struct {
 	CreatedAt       string   `json:"createdAt"`
 }
 
+type SaleItem struct {
+	ProductID   string  `json:"productId"`
+	SKU         string  `json:"sku"`
+	ProductName string  `json:"productName"`
+	UnitPrice   float64 `json:"unitPrice"`
+}
+
+type SaleTransaction struct {
+	DocType     string     `json:"docType"`
+	ID          string     `json:"id"`
+	Items       []SaleItem `json:"items"`
+	CustomerID  string     `json:"customerId"`
+	CashierID   string     `json:"cashierId"`
+	CashierName string     `json:"cashierName"`
+	SubTotal    float64    `json:"subTotal"`
+	TaxAmount   float64    `json:"taxAmount"`
+	TotalAmount float64    `json:"totalAmount"`
+	Currency    string     `json:"currency"`
+	RetailerMSP string     `json:"retailerMsp"`
+	Notes       string     `json:"notes"`
+	TxID        string     `json:"txId"`
+	CreatedAt   string     `json:"createdAt"`
+}
+
+type InventoryItem struct {
+	SKU        string   `json:"sku"`
+	Name       string   `json:"name"`
+	Count      int      `json:"count"`
+	ProductIDs []string `json:"productIds"`
+}
+
 // ── Paginated result wrappers ─────────────────────────────────────────────────
 
 type PagedProductResult struct {
@@ -161,6 +195,12 @@ type PagedShipmentResult struct {
 	Shipments []*Shipment `json:"shipments"`
 	Bookmark  string      `json:"bookmark"`
 	Count     int         `json:"count"`
+}
+
+type PagedSaleResult struct {
+	Sales    []*SaleTransaction `json:"sales"`
+	Bookmark string             `json:"bookmark"`
+	Count    int                `json:"count"`
 }
 
 type HistoryQueryResult struct {
@@ -1072,6 +1112,193 @@ func collectHistoryForKey(ctx contractapi.TransactionContextInterface, key strin
 		})
 	}
 	return results, nil
+}
+
+// ── POS functions ─────────────────────────────────────────────────────────────
+
+func (s *SmartContract) CreateSale(ctx contractapi.TransactionContextInterface,
+	id, customerID, cashierID, cashierName, itemsJSON, taxAmountStr, currency, notes string) error {
+
+	caller, err := requireMSP(ctx, "Org3MSP")
+	if err != nil {
+		return err
+	}
+
+	existing, err := ctx.GetStub().GetState(prefixSale + id)
+	if err != nil {
+		return fmt.Errorf("failed to check sale %s: %w", id, err)
+	}
+	if existing != nil {
+		return fmt.Errorf("sale %s already exists", id)
+	}
+
+	var items []SaleItem
+	if err := json.Unmarshal([]byte(itemsJSON), &items); err != nil {
+		return fmt.Errorf("failed to unmarshal items: %w", err)
+	}
+	if len(items) == 0 {
+		return fmt.Errorf("sale must have at least one item")
+	}
+
+	taxAmount, err := strconv.ParseFloat(taxAmountStr, 64)
+	if err != nil {
+		return fmt.Errorf("invalid taxAmount %q: %w", taxAmountStr, err)
+	}
+
+	now, err := txTimestamp(ctx)
+	if err != nil {
+		return err
+	}
+
+	var subTotal float64
+	for i, item := range items {
+		p, err := getProductByID(ctx, item.ProductID)
+		if err != nil {
+			return err
+		}
+		if p.Status != ProductStatusDelivered {
+			return fmt.Errorf("product %s is not DELIVERED (status: %s)", item.ProductID, p.Status)
+		}
+		if p.CurrentOwnerMSP != "Org3MSP" {
+			return fmt.Errorf("product %s is not owned by Org3MSP", item.ProductID)
+		}
+		if p.RecallID != "" {
+			return fmt.Errorf("product %s is under recall %s", item.ProductID, p.RecallID)
+		}
+
+		p.Status = ProductStatusSold
+		p.UpdatedAt = now
+		if err := putJSON(ctx, prefixProduct+item.ProductID, p); err != nil {
+			return err
+		}
+
+		items[i].SKU = p.SKU
+		items[i].ProductName = p.Name
+		subTotal += item.UnitPrice
+	}
+
+	if currency == "" {
+		currency = "IDR"
+	}
+
+	sale := SaleTransaction{
+		DocType:     "SALE",
+		ID:          id,
+		Items:       items,
+		CustomerID:  customerID,
+		CashierID:   cashierID,
+		CashierName: cashierName,
+		SubTotal:    subTotal,
+		TaxAmount:   taxAmount,
+		TotalAmount: subTotal + taxAmount,
+		Currency:    currency,
+		RetailerMSP: caller,
+		Notes:       notes,
+		TxID:        ctx.GetStub().GetTxID(),
+		CreatedAt:   now,
+	}
+	return putJSON(ctx, prefixSale+id, sale)
+}
+
+func (s *SmartContract) ReadSale(ctx contractapi.TransactionContextInterface, id string) (*SaleTransaction, error) {
+	b, err := ctx.GetStub().GetState(prefixSale + id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sale %s: %w", id, err)
+	}
+	if b == nil {
+		return nil, fmt.Errorf("sale %s does not exist", id)
+	}
+	var sale SaleTransaction
+	if err := json.Unmarshal(b, &sale); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal sale %s: %w", id, err)
+	}
+	return &sale, nil
+}
+
+func (s *SmartContract) GetAllSales(ctx contractapi.TransactionContextInterface, pageSizeStr, bookmark string) (*PagedSaleResult, error) {
+	pageSize, err := strconv.ParseInt(pageSizeStr, 10, 32)
+	if err != nil || pageSize <= 0 {
+		pageSize = 20
+	}
+
+	iter, meta, err := ctx.GetStub().GetStateByRangeWithPagination(
+		prefixSale, prefixSale+"\x7f", int32(pageSize), bookmark)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sales: %w", err)
+	}
+	defer iter.Close()
+
+	var sales []*SaleTransaction
+	for iter.HasNext() {
+		res, err := iter.Next()
+		if err != nil {
+			return nil, err
+		}
+		var sale SaleTransaction
+		if err := json.Unmarshal(res.Value, &sale); err != nil {
+			return nil, err
+		}
+		sales = append(sales, &sale)
+	}
+	if sales == nil {
+		sales = make([]*SaleTransaction, 0)
+	}
+	return &PagedSaleResult{Sales: sales, Bookmark: meta.Bookmark, Count: len(sales)}, nil
+}
+
+func (s *SmartContract) GetSalesByCustomer(ctx contractapi.TransactionContextInterface, customerID string) ([]*SaleTransaction, error) {
+	query := fmt.Sprintf(`{"selector":{"docType":"SALE","customerId":%q},"use_index":["indexSaleByCustomerDoc","indexSaleByCustomer"]}`, customerID)
+	iter, err := ctx.GetStub().GetQueryResult(query)
+	if err != nil {
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+	defer iter.Close()
+
+	var sales []*SaleTransaction
+	for iter.HasNext() {
+		res, err := iter.Next()
+		if err != nil {
+			return nil, err
+		}
+		var sale SaleTransaction
+		if err := json.Unmarshal(res.Value, &sale); err != nil {
+			return nil, err
+		}
+		sales = append(sales, &sale)
+	}
+	if sales == nil {
+		sales = make([]*SaleTransaction, 0)
+	}
+	return sales, nil
+}
+
+func (s *SmartContract) GetInventory(ctx contractapi.TransactionContextInterface, ownerMSP string) ([]*InventoryItem, error) {
+	if ownerMSP == "" {
+		ownerMSP = "Org3MSP"
+	}
+	query := fmt.Sprintf(`{"selector":{"docType":"PRODUCT","status":"DELIVERED","currentOwnerMSP":%q},"use_index":["indexByStatusAndOwnerDoc","indexByStatusAndOwner"]}`, ownerMSP)
+	products, err := queryProducts(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	bySKU := make(map[string]*InventoryItem)
+	var order []string
+	for _, p := range products {
+		if _, seen := bySKU[p.SKU]; !seen {
+			bySKU[p.SKU] = &InventoryItem{SKU: p.SKU, Name: p.Name, ProductIDs: []string{}}
+			order = append(order, p.SKU)
+		}
+		item := bySKU[p.SKU]
+		item.Count++
+		item.ProductIDs = append(item.ProductIDs, p.ID)
+	}
+
+	result := make([]*InventoryItem, 0, len(order))
+	for _, sku := range order {
+		result = append(result, bySKU[sku])
+	}
+	return result, nil
 }
 
 func main() {

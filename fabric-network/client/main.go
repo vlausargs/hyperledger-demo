@@ -138,6 +138,16 @@ func main() {
 			recalls.GET("/:id", rest.ReadRecall(fabricGateway))
 		}
 
+		// POS endpoints (Org3 Retailer)
+		pos := v1.Group("/pos")
+		{
+			pos.POST("/sales", rest.CreateSale(fabricGateway))
+			pos.GET("/sales", rest.GetAllSales(fabricGateway))
+			pos.GET("/sales/:id", rest.GetSale(fabricGateway))
+			pos.GET("/inventory", rest.GetInventory(fabricGateway))
+			pos.GET("/verify/:id", rest.VerifyProduct(fabricGateway))
+		}
+
 		// Channel endpoints
 		channels := v1.Group("/channels")
 		{

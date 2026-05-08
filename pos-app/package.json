@@ -1,0 +1,20 @@
+{
+  "name": "pos-app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "nanoid": "^5.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "^5.2.0",
+    "@sveltejs/kit": "^2.16.0",
+    "svelte": "^5.0.0",
+    "vite": "^8.0.0"
+  }
+}
