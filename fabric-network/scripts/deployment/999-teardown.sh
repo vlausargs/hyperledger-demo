@@ -193,7 +193,7 @@ cleanup_artifacts() {
         print_status $GREEN "✓ Connection profile removed"
     fi
 
-    # Remove client crypto
+    # Remove client crypto (single-org legacy + per-org named dirs)
     if [ -d "${PROJECT_ROOT}/client/crypto" ]; then
         rm -rf "${PROJECT_ROOT}/client/crypto"
         print_status $GREEN "✓ Client crypto removed"
@@ -202,6 +202,9 @@ cleanup_artifacts() {
         rm -rf "${PROJECT_ROOT}/fabric-network/client/crypto"
         print_status $GREEN "✓ Client crypto (fabric-network) removed"
     fi
+    for d in "${PROJECT_ROOT}/fabric-network/client"/crypto-*; do
+        [ -d "$d" ] && rm -rf "$d" && print_status $GREEN "✓ Removed $(basename $d)"
+    done
 
     # Remove Org3 CA Config
     if [ -d "${PROJECT_ROOT}/config/ca/org3" ]; then
@@ -209,7 +212,7 @@ cleanup_artifacts() {
         print_status $GREEN "✓ Org3 CA Config removed"
     fi
 
-    # Remove client wallet
+    # Remove client wallet (single-org legacy + per-org named dirs)
     if [ -d "${PROJECT_ROOT}/client/wallet" ]; then
         rm -rf "${PROJECT_ROOT}/client/wallet"
         print_status $GREEN "✓ Client wallet removed"
@@ -218,6 +221,9 @@ cleanup_artifacts() {
         rm -rf "${PROJECT_ROOT}/fabric-network/client/wallet"
         print_status $GREEN "✓ Client wallet (fabric-network) removed"
     fi
+    for d in "${PROJECT_ROOT}/fabric-network/client"/wallet-*; do
+        [ -d "$d" ] && rm -rf "$d" && print_status $GREEN "✓ Removed $(basename $d)"
+    done
 
     # Remove docker-compose generated files
     if [ -d "${PROJECT_ROOT}/docker-compose" ]; then
@@ -264,8 +270,9 @@ cleanup_images() {
 cleanup_temp() {
     print_status $YELLOW "Cleaning up temporary files..."
 
-    # Remove log files
+    # Remove log files (single-org legacy + per-org named logs)
     rm -f /tmp/fabric-client.log 2>/dev/null || true
+    rm -f /tmp/fabric-client-*.log 2>/dev/null || true
 
     # Remove any temporary chaincode builds
     find "${PROJECT_ROOT}/chaincode" -name "*.tar.gz" -delete 2>/dev/null || true
