@@ -30,6 +30,21 @@ fi
 
 source "${PROJECT_ROOT}/.env"
 
+DEPLOY_POSTGRES=${DEPLOY_POSTGRES:-true}
+
+# Resolve postgres host: use external host when postgres is not deployed locally
+if [ "${DEPLOY_POSTGRES}" = "true" ]; then
+    POSTGRES_ORDERER_DBHOST="${POSTGRES_ORDERER_HOST}"
+    POSTGRES_ORG1_DBHOST="${POSTGRES_ORG1_HOST}"
+    POSTGRES_ORG2_DBHOST="${POSTGRES_ORG2_HOST}"
+    POSTGRES_ORG3_DBHOST="${POSTGRES_ORG3_HOST}"
+else
+    POSTGRES_ORDERER_DBHOST="${POSTGRES_ORDERER_EXTERNAL_HOST}"
+    POSTGRES_ORG1_DBHOST="${POSTGRES_ORG1_EXTERNAL_HOST}"
+    POSTGRES_ORG2_DBHOST="${POSTGRES_ORG2_EXTERNAL_HOST}"
+    POSTGRES_ORG3_DBHOST="${POSTGRES_ORG3_EXTERNAL_HOST}"
+fi
+
 # Set default CSR values for CA certificates
 CA_CSR_COUNTRY=${CA_CSR_COUNTRY:-"US"}
 CA_CSR_STATE=${CA_CSR_STATE:-"California"}
@@ -251,7 +266,7 @@ if [ "$DEPLOY_ORDERER" = true ]; then
         "${CA_ORDERER_NAME}" \
         "${CA_ORDERER_HOSTNAME}" \
         "${config_dir}" \
-        "${POSTGRES_ORDERER_HOST}" \
+        "${POSTGRES_ORDERER_DBHOST}" \
         "${POSTGRES_ORDERER_PORT}" \
         "${POSTGRES_ORDERER_USER}" \
         "${POSTGRES_ORDERER_PASSWORD}" \
@@ -282,7 +297,7 @@ if [ "$DEPLOY_ORG1" = true ]; then
         "${CA_ORG1_NAME}" \
         "${CA_ORG1_HOSTNAME}" \
         "${config_dir}" \
-        "${POSTGRES_ORG1_HOST}" \
+        "${POSTGRES_ORG1_DBHOST}" \
         "${POSTGRES_ORG1_PORT}" \
         "${POSTGRES_ORG1_USER}" \
         "${POSTGRES_ORG1_PASSWORD}" \
@@ -313,7 +328,7 @@ if [ "$DEPLOY_ORG2" = true ]; then
         "${CA_ORG2_NAME}" \
         "${CA_ORG2_HOSTNAME}" \
         "${config_dir}" \
-        "${POSTGRES_ORG2_HOST}" \
+        "${POSTGRES_ORG2_DBHOST}" \
         "${POSTGRES_ORG2_PORT}" \
         "${POSTGRES_ORG2_USER}" \
         "${POSTGRES_ORG2_PASSWORD}" \
@@ -343,7 +358,7 @@ if [ "$DEPLOY_ORG3" = true ]; then
         "${CA_ORG3_NAME}" \
         "${CA_ORG3_HOSTNAME}" \
         "${config_dir}" \
-        "${POSTGRES_ORG3_HOST}" \
+        "${POSTGRES_ORG3_DBHOST}" \
         "${POSTGRES_ORG3_PORT}" \
         "${POSTGRES_ORG3_USER}" \
         "${POSTGRES_ORG3_PASSWORD}" \

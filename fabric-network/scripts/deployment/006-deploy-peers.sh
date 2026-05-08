@@ -37,6 +37,10 @@ source "${PROJECT_ROOT}/.env"
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
 DEPLOY_ORG3=${DEPLOY_ORG3:-false}
+DEPLOY_COUCHDB=${DEPLOY_COUCHDB:-true}
+COUCHDB_ORG1_HOST=${COUCHDB_ORG1_HOST:-localhost}
+COUCHDB_ORG2_HOST=${COUCHDB_ORG2_HOST:-localhost}
+COUCHDB_ORG3_HOST=${COUCHDB_ORG3_HOST:-localhost}
 
 print_status $GREEN "=== Starting Peer Deployment ==="
 print_status $YELLOW "Deployment Mode:"
@@ -83,8 +87,10 @@ create_peer_compose() {
     local peer_profile_port=${10}
     local compose_file=${11}
     local external_host=${12}
+    local couchdb_address=${13}  # "host:port" used by peer to reach CouchDB
 
-    cat > "$compose_file" << EOF
+    if [ "${DEPLOY_COUCHDB}" = "true" ]; then
+        cat > "$compose_file" << EOF
 version: '3.8'
 
 services:
@@ -132,7 +138,7 @@ services:
       - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
       - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
       - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
-      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=localhost:${couchdb_port}
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=${couchdb_address}
       - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=${couchdb_user}
       - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=${couchdb_pass}
       - FABRIC_LOGGING_SPEC=\${PEER_LOG_LEVEL}
@@ -189,6 +195,83 @@ volumes:
   ${peer_name}.${org_domain}:
     driver: local
 EOF
+    else
+        # External CouchDB: no local couchdb service, no depends_on
+        cat > "$compose_file" << EOF
+version: '3.8'
+
+services:
+  ${peer_name}.${org_domain}:
+    container_name: ${peer_name}.${org_domain}
+    image: hyperledger/fabric-peer:\${FABRIC_VERSION}
+    environment:
+      - CORE_PEER_ID=${peer_name}.${org_domain}
+      - CORE_PEER_ADDRESS=${peer_name}.${org_domain}:${peer_port}
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:${peer_port}
+      - CORE_PEER_CHAINCODEADDRESS=${peer_name}.${org_domain}:${peer_ssl_port}
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:${peer_ssl_port}
+      - CORE_PEER_GOSSIP_BOOTSTRAP=${peer_name}.${org_domain}:${peer_port}
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=${external_host}:${peer_port}
+      - CORE_PEER_LOCALMSPID=${org_name}
+      - CORE_PEER_TLS_ENABLED=\${TLS_ENABLED}
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=${couchdb_address}
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=${couchdb_user}
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=${couchdb_pass}
+      - FABRIC_LOGGING_SPEC=\${PEER_LOG_LEVEL}
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - DOCKER_HOST=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=host
+      - FABRIC_CFG_PATH=/etc/hyperledger/fabric
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:$peer_metrics_port
+      - CORE_METRICS_PROVIDER=prometheus
+      - CORE_PEER_PROFILE_ENABLED=true
+      - CORE_PEER_PROFILE_LISTENADDRESS=0.0.0.0:$peer_profile_port
+      - CORE_CHAINCODE_LOGGING_LEVEL=INFO
+      - CORE_CHAINCODE_LOGGING_SHIM=INFO
+      - CORE_CHAINCODE_LOGGING_FORMAT= '%{color}%{time:2006-01-02 15:04:15.000 MST} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}'
+      - CORE_CHAINCODE_MODE=dev
+      - GOPROXY=https://goproxy.cn,direct
+      - GOSUMDB=off
+      - GO111MODULE=on
+      - CORE_CHAINCODE_BUILDER=hyperledger/fabric-ccenv:2.5
+      - CORE_CHAINCODE_EXTERNALBUILDERS=[]
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
+    command: sh -c "apt-get update && apt-get install -y curl docker-cli && peer node start"
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/msp:/etc/hyperledger/fabric/msp
+      - ${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/${peer_name}.${org_domain}/tls:/etc/hyperledger/fabric/tls
+      - ${PROJECT_ROOT}/config/channel-artifacts:/etc/hyperledger/fabric/channel-artifacts
+      - ${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/admin.${org_domain}/msp:/etc/hyperledger/fabric/admin-msp
+      - ${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/user1.${org_domain}/msp:/etc/hyperledger/fabric/client-msp
+      - ${PROJECT_ROOT}/organizations/ordererOrganizations/${ORDERER_DOMAIN}/users/ca-admin.${ORDERER_DOMAIN}/msp:/etc/hyperledger/fabric/orderer-admin-msp
+      - ${peer_name}.${org_domain}:/var/hyperledger/production
+    network_mode: host
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:$peer_metrics_port/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: \${PEER_MEMORY_LIMIT}
+          cpus: '\${PEER_CPU_LIMIT}'
+        reservations:
+          memory: \${PEER_MEMORY_RESERVE}
+          cpus: '\${PEER_CPU_RESERVE}'
+
+volumes:
+  ${peer_name}.${org_domain}:
+    driver: local
+EOF
+    fi
 }
 
 # Function to verify prerequisites
@@ -223,6 +306,15 @@ deploy_peer() {
     local couchdb_pass=$8
     local peer_metrics_port=$9
     local peer_profile_port=${10}
+    local couchdb_host=${11:-localhost}  # external CouchDB host (used when DEPLOY_COUCHDB=false)
+
+    # Compute CouchDB address for peer config
+    local couchdb_address
+    if [ "${DEPLOY_COUCHDB}" = "true" ]; then
+        couchdb_address="localhost:${couchdb_port}"
+    else
+        couchdb_address="${couchdb_host}:${couchdb_port}"
+    fi
 
     print_status $YELLOW "=== Deploying ${peer_name}.${org_domain} ==="
 
@@ -236,8 +328,10 @@ deploy_peer() {
     local org_dir=$(echo "$org_domain" | cut -d'.' -f1)
     mkdir -p "${PROJECT_ROOT}/docker-compose/${org_dir}"
 
-    # Generate CouchDB configuration file
-    create_couchdb_config "$org_domain" "$couchdb_port"
+    # Generate CouchDB configuration file (only needed for local CouchDB)
+    if [ "${DEPLOY_COUCHDB}" = "true" ]; then
+        create_couchdb_config "$org_domain" "$couchdb_port"
+    fi
 
     # Create peer docker-compose file
     local compose_file="${PROJECT_ROOT}/docker-compose/${org_dir}/peer.yml"
@@ -256,7 +350,8 @@ deploy_peer() {
         "$peer_metrics_port" \
         "$peer_profile_port" \
         "$compose_file" \
-        "$external_host"
+        "$external_host" \
+        "$couchdb_address"
 
     # Deploy peer
     print_status $YELLOW "Deploying ${peer_name}.${org_domain} service..."
@@ -298,31 +393,33 @@ deploy_peer() {
         docker rm ${peer_name}.${org_domain} 2>/dev/null || true
     fi
 
-    if docker ps -a | grep -q "couchdb.${org_domain}"; then
-        print_status $YELLOW "Stopping existing couchdb.${org_domain} container..."
-        docker stop couchdb.${org_domain} 2>/dev/null || true
-        docker rm couchdb.${org_domain} 2>/dev/null || true
+    if [ "${DEPLOY_COUCHDB}" = "true" ]; then
+        if docker ps -a | grep -q "couchdb.${org_domain}"; then
+            print_status $YELLOW "Stopping existing couchdb.${org_domain} container..."
+            docker stop couchdb.${org_domain} 2>/dev/null || true
+            docker rm couchdb.${org_domain} 2>/dev/null || true
+        fi
+
+        # Wait for ports to be released
+        print_status $YELLOW "Waiting for ports to be released..."
+        sleep 5
+
+        # Kill any zombie processes that might be holding the port
+        if is_port_in_use ${couchdb_port}; then
+            print_status $YELLOW "Attempting to kill processes on port ${couchdb_port}..."
+            fuser -k ${couchdb_port}/tcp 2>/dev/null || true
+            sleep 2
+        fi
+
+        # Ensure CouchDB port is free before starting
+        if ! wait_for_port_free ${couchdb_port}; then
+            print_status $RED "✗ Cannot free port ${couchdb_port}, aborting deployment"
+            return 1
+        fi
+
+        # Additional wait to ensure port is fully released
+        sleep 3
     fi
-
-    # Wait for ports to be released
-    print_status $YELLOW "Waiting for ports to be released..."
-    sleep 5
-
-    # Kill any zombie processes that might be holding the port
-    if is_port_in_use ${couchdb_port}; then
-        print_status $YELLOW "Attempting to kill processes on port ${couchdb_port}..."
-        fuser -k ${couchdb_port}/tcp 2>/dev/null || true
-        sleep 2
-    fi
-
-    # Ensure CouchDB port is free before starting
-    if ! wait_for_port_free ${couchdb_port}; then
-        print_status $RED "✗ Cannot free port ${couchdb_port}, aborting deployment"
-        return 1
-    fi
-
-    # Additional wait to ensure port is fully released
-    sleep 3
 
     docker compose -f "$compose_file" --env-file "${PROJECT_ROOT}/.env" up -d
 
@@ -331,32 +428,36 @@ deploy_peer() {
 
     print_status $GREEN "✓ ${peer_name}.${org_domain} deployed"
 
-    # Wait for CouchDB to be ready first
-    print_status $YELLOW "Waiting for CouchDB (${couchdb_port}) to be ready..."
+    if [ "${DEPLOY_COUCHDB}" = "true" ]; then
+        # Wait for CouchDB to be ready first
+        print_status $YELLOW "Waiting for CouchDB (${couchdb_port}) to be ready..."
 
-    local couchdb_max_attempts=10
-    local couchdb_attempt=1
+        local couchdb_max_attempts=10
+        local couchdb_attempt=1
 
-    while [ $couchdb_attempt -le $couchdb_max_attempts ]; do
-        # Check if CouchDB container is running and healthy
-        if docker ps | grep -q "couchdb.${org_domain}" && \
-           docker inspect couchdb.${org_domain} | grep -q '"Status": "healthy'; then
-            # Verify CouchDB is responsive
-            if curl -s http://localhost:${couchdb_port}/ > /dev/null 2>&1; then
-                print_status $GREEN "✓ CouchDB is ready"
-                break
+        while [ $couchdb_attempt -le $couchdb_max_attempts ]; do
+            # Check if CouchDB container is running and healthy
+            if docker ps | grep -q "couchdb.${org_domain}" && \
+               docker inspect couchdb.${org_domain} | grep -q '"Status": "healthy'; then
+                # Verify CouchDB is responsive
+                if curl -s http://localhost:${couchdb_port}/ > /dev/null 2>&1; then
+                    print_status $GREEN "✓ CouchDB is ready"
+                    break
+                fi
             fi
+
+            echo "  Attempt $couchdb_attempt/$couchdb_max_attempts: Waiting for CouchDB..."
+            sleep 2
+            couchdb_attempt=$((couchdb_attempt + 1))
+        done
+
+        if [ $couchdb_attempt -gt $couchdb_max_attempts ]; then
+            print_status $RED "✗ CouchDB failed to start within timeout period"
+            print_status $YELLOW "Check CouchDB logs with: docker logs couchdb.${org_domain}"
+            return 1
         fi
-
-        echo "  Attempt $couchdb_attempt/$couchdb_max_attempts: Waiting for CouchDB..."
-        sleep 2
-        couchdb_attempt=$((couchdb_attempt + 1))
-    done
-
-    if [ $couchdb_attempt -gt $couchdb_max_attempts ]; then
-        print_status $RED "✗ CouchDB failed to start within timeout period"
-        print_status $YELLOW "Check CouchDB logs with: docker logs couchdb.${org_domain}"
-        return 1
+    else
+        print_status $YELLOW "Using external CouchDB at ${couchdb_address}"
     fi
 
     # Wait for peer to be ready
@@ -453,7 +554,7 @@ if [ "$DEPLOY_ORG1" = true ]; then
         "${COUCHDB_ORG1_PASSWORD}" \
         "${PEER0_ORG1_METRICS_PORT}" \
         "${PEER0_ORG1_PROFILE_PORT}" \
-        "${PROJECT_ROOT}/docker-compose/org1/peer.yml"
+        "${COUCHDB_ORG1_HOST}"
 fi
 
 # Deploy Org2 Peer
@@ -469,7 +570,7 @@ if [ "$DEPLOY_ORG2" = true ]; then
         "${COUCHDB_ORG2_PASSWORD}" \
         "${PEER0_ORG2_METRICS_PORT}" \
         "${PEER0_ORG2_PROFILE_PORT}" \
-        "${PROJECT_ROOT}/docker-compose/org2/peer.yml"
+        "${COUCHDB_ORG2_HOST}"
 fi
 
 # Deploy Org3 Peer
@@ -485,7 +586,7 @@ if [ "$DEPLOY_ORG3" = true ]; then
         "${COUCHDB_ORG3_PASSWORD}" \
         "${PEER0_ORG3_METRICS_PORT}" \
         "${PEER0_ORG3_PROFILE_PORT}" \
-        "${PROJECT_ROOT}/docker-compose/org3/peer.yml"
+        "${COUCHDB_ORG3_HOST}"
 fi
 
 sleep 20;

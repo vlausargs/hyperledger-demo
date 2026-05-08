@@ -34,6 +34,13 @@ DEPLOY_ORDERER=${DEPLOY_ORDERER:-true}
 DEPLOY_ORG1=${DEPLOY_ORG1:-true}
 DEPLOY_ORG2=${DEPLOY_ORG2:-true}
 DEPLOY_ORG3=${DEPLOY_ORG3:-false}
+DEPLOY_POSTGRES=${DEPLOY_POSTGRES:-true}
+
+if [ "${DEPLOY_POSTGRES}" != "true" ]; then
+    print_status $YELLOW "DEPLOY_POSTGRES=false — skipping local PostgreSQL deployment."
+    print_status $YELLOW "CA will connect to external hosts configured in POSTGRES_*_EXTERNAL_HOST."
+    exit 0
+fi
 
 print_status $GREEN "=== Starting PostgreSQL Deployment ==="
 print_status $YELLOW "Deployment Mode:"
