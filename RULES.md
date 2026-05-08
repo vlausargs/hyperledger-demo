@@ -2,12 +2,14 @@
 
 ## Project Overview
 
-Hyperledger Fabric 2.4.9 blockchain network with:
+Hyperledger Fabric 2.5.15 blockchain network with:
 - 1 Orderer (etcdraft)
-- 2 Peer Orgs (Org1, Org2)
-- 3 Fabric CAs (orderer + per org)
-- Go REST API (Gin) as client layer
-- Go chaincode (basic asset management)
+- 3 Peer Orgs (Org1MSP = Manufacturer, Org2MSP = Distributor, Org3MSP = Retailer)
+- 4 Fabric CAs (orderer + one per org)
+- PostgreSQL as CA backend (one DB per CA, schema-isolated)
+- CouchDB as peer state DB (one per peer)
+- Go supply chain chaincode (`basic`)
+- Go REST API (Gin) — one client process per org (ports 8080 / 8081 / 8082)
 - Docker Compose for all services
 
 ---
@@ -19,13 +21,21 @@ hlf-demo/
 ├── config/                  # core.yaml + generated channel artifacts (.block, .tx)
 ├── fabric-binaries/         # Downloaded peer/orderer/fabric-ca-client binaries
 ├── fabric-network/
-│   ├── chaincode/basic/     # Go chaincode
+│   ├── chaincode/basic/     # Go supply chain chaincode
+│   │   └── META-INF/statedb/couchdb/indexes/  # CouchDB index definitions
 │   ├── client/              # Go REST API (Gin + Fabric Gateway)
+│   │   ├── crypto-Org1/     # Org1 TLS certs + user key/cert + connection profile
+│   │   ├── crypto-Org2/     # Org2 (same structure)
+│   │   ├── crypto-Org3/     # Org3 (same structure)
+│   │   ├── wallet-Org1/     # Org1 identity wallet
+│   │   ├── wallet-Org2/
+│   │   └── wallet-Org3/
 │   ├── config/              # configtx.yaml, connection profiles
 │   └── scripts/
 │       ├── deployment/      # Numbered scripts 001–009, 999
 │       └── helpers/         # fabric-env.sh, download-fabric-binaries.sh
 ├── organizations/           # Generated crypto (MSP, TLS certs, keys) — gitignored
+├── fabric-network/organizations/ # Same — gitignored (see .gitignore)
 ├── docker-compose/          # Generated compose files — gitignored
 ├── backups/                 # Timestamped network state backups — gitignored
 ├── copy-script/             # rsync scripts for multi-machine sync
@@ -46,7 +56,7 @@ orderer1.orderer.example.com
 
 ### MSP IDs
 ```
-OrdererMSP, Org1MSP, Org2MSP
+OrdererMSP, Org1MSP, Org2MSP, Org3MSP
 ```
 
 ### Identities
@@ -59,14 +69,14 @@ bootstrap-admin.<identity>
 
 ### Environment Variables
 - UPPERCASE_UNDERSCORE
-- Prefixes: `DEPLOY_`, `POSTGRES_`, `CA_`, `PEER_`, `COUCHDB_`, `ORDERER_`, `ORG1_`, `ORG2_`
+- Prefixes: `DEPLOY_`, `POSTGRES_`, `CA_`, `PEER_`, `COUCHDB_`, `ORDERER_`, `ORG1_`, `ORG2_`, `ORG3_`
 
 ### Scripts
 - Format: `NNN-<description>.sh` (001–009 sequential, 999 = teardown)
 - Never reuse or skip numbers
 
 ### Chaincode Functions
-- CamelCase: `CreateAsset`, `ReadAsset`, `TransferAsset`
+- CamelCase: `CreateProduct`, `ReadProduct`, `CreateShipment`
 - Struct fields: Go convention (exported PascalCase with JSON camelCase tags)
 
 ---
@@ -79,14 +89,22 @@ bootstrap-admin.<identity>
 | CA Orderer | 7054 |
 | CA Org1 | 8054 |
 | CA Org2 | 9054 |
+| CA Org3 | 10054 |
 | Peer Org1 | 8051 |
 | Peer Org2 | 9051 |
+| Peer Org3 | 10051 |
 | CouchDB Org1 | 5984 |
 | CouchDB Org2 | 7984 |
-| PostgreSQL Orderer CA | 5432 |
-| PostgreSQL Org1 CA | 5433 |
-| PostgreSQL Org2 CA | 5434 |
-| REST API | 8080 |
+| CouchDB Org3 | 9984 |
+| PostgreSQL Orderer CA (local) | 5435 |
+| PostgreSQL Org1 CA (local) | 5436 |
+| PostgreSQL Org2 CA (local) | 5437 |
+| PostgreSQL Org3 CA (local) | 5438 |
+| REST API Org1 (Manufacturer) | 8080 |
+| REST API Org2 (Distributor) | 8081 |
+| REST API Org3 (Retailer) | 8082 |
+
+When `DEPLOY_POSTGRES=false` all CAs connect to external postgres at `POSTGRES_*_EXTERNAL_HOST:5432`.
 
 Do not change port assignments without updating `.env.example` and all Docker Compose templates.
 
@@ -98,7 +116,10 @@ Do not change port assignments without updating `.env.example` and all Docker Co
 2. **`.env` is gitignored** — always keep `.env.example` in sync when adding new vars
 3. **`.env.example` is the source of truth** for all configurable parameters
 4. Connection profile (`connection-profile.yaml`) embeds TLS certs as PEM — regenerate after cert rotation
-5. Deployment flags (`DEPLOY_ORDERER`, `DEPLOY_ORG1`, `DEPLOY_ORG2`) control which components start — respect them in all scripts
+5. Deployment flags control which components start — respect them in all scripts:
+   - `DEPLOY_ORDERER`, `DEPLOY_ORG1`, `DEPLOY_ORG2`, `DEPLOY_ORG3`
+   - `DEPLOY_POSTGRES` — `false` skips local postgres containers; CAs use `POSTGRES_*_EXTERNAL_HOST`
+   - `DEPLOY_COUCHDB` — `false` skips local CouchDB containers; peers use `COUCHDB_ORGn_HOST`
 
 ---
 
@@ -112,6 +133,20 @@ Do not change port assignments without updating `.env.example` and all Docker Co
 6. Use `set -e` — fail fast on errors
 7. Log meaningful progress messages to stdout
 8. Chaincode install: handle "already successfully installed" exit code gracefully — skip with warning, still query package ID
+9. **Teardown grep pattern** matches `postgres-ord|postgres-org` (not bare `postgres`) — prevents killing external postgres containers not managed by these scripts
+10. **002-deploy-ca.sh**: when `DEPLOY_POSTGRES=true`, CA datasource uses `localhost` (not container name) because both CA and postgres share `network_mode: host`; uses `--force-recreate` on compose up so containers reload config on re-run
+
+---
+
+## PostgreSQL / CA Database Rules
+
+1. Each CA uses its own database: `fabric_ca_orderer`, `fabric_ca_org1`, `fabric_ca_org2`, `fabric_ca_org3`
+2. Tables are created in a schema matching the db name (not `public`) via `search_path=<db_name>` in datasource
+3. Schema is created by `002-deploy-ca.sh` (`ensure_pg_schema`) before CA starts
+4. Datasource must include `sslmode=disable` — `sslmode=prefer` causes silent connection failures with lib/pq when postgres has no SSL configured
+5. Password special characters must be quoted: `password='p@ss!'` in datasource string
+6. When `DEPLOY_POSTGRES=true`: local containers bind unique ports (5435–5438), CA connects via `localhost`
+7. When `DEPLOY_POSTGRES=false`: CA connects to `POSTGRES_*_EXTERNAL_HOST:5432`; schema and user must pre-exist
 
 ---
 
@@ -120,28 +155,43 @@ Do not change port assignments without updating `.env.example` and all Docker Co
 1. Language: **Go only**
 2. Location: `fabric-network/chaincode/<name>/`
 3. Chaincode name matches directory name (currently `basic`)
-4. Version bumps require re-approval + commit on both orgs — update `CHAINCODE_VERSION` in `.env`
-5. Endorsement policy: `AND('Org1MSP.member','Org2MSP.member')` — both orgs must sign
+4. Version bumps require re-approval + commit on all 3 orgs — update `CHAINCODE_VERSION` in `.env`
+5. Endorsement policy: `AND('Org1MSP.member','Org2MSP.member','Org3MSP.member')` — all 3 orgs must sign
 6. All chaincode functions must return typed errors, never panic
-7. Use `ctx.GetStub().GetStateByRange()` for range queries, not full table scans
-8. Asset existence check before create/update/delete
+7. No `DelState` — supply chain records are permanent audit trail
+8. Asset existence check before create/update
+9. Ledger key prefixes: `PROD~`, `SHIP~`, `CUSTODY~`, `EVENT~`, `RECALL~`
+10. CouchDB indexes defined in `META-INF/statedb/couchdb/indexes/` — required for rich queries on `docType`, `status`, `batchId`, `currentOwnerMSP`
+
+### Domain Models
+| Type | Key |
+|------|-----|
+| Product | `PROD~{id}` |
+| Shipment | `SHIP~{id}` |
+| CustodyRecord | `CUSTODY~{shipmentId}~{seq:04d}` |
+| SupplyChainEvent | `EVENT~{targetId}~{txTimestamp}~{id}` |
+| RecallNotice | `RECALL~{id}` |
 
 ---
 
 ## REST API Rules
 
 1. Base path: `/api/v1/`
-2. Route groups: `assets`, `channels`, `chaincodes`, `transactions`, `network`
+2. Route groups: `products`, `shipments`, `events`, `recalls`, `channels`, `chaincodes`, `network`, `auth`
 3. All responses: JSON with consistent error structure `{"error": "message"}`
-4. Health endpoint: `GET /health` — queries ledger via `GetAllAssets`; returns 503 if Fabric unreachable
+4. Health endpoint: `GET /health` — queries ledger via `GetAllProducts`; returns 503 if Fabric unreachable
 5. No business logic in handlers — delegate to `fabric/connector.go`
 6. Fabric Gateway connection initialized once at startup, reused across requests
 7. CORS: set `CORS_ALLOWED_ORIGIN` env var — never use wildcard `*` in production
-8. Default port 8080, configurable via `CLIENT_PORT` env var
-9. All `/api/v1/` routes require JWT Bearer token — set `JWT_SECRET` env var (fail 500 if unset)
-10. Validate all asset IDs: alphanumeric + `_-`, max 64 chars, before submitting to chaincode
-11. Return specific HTTP codes: 400 (validation), 401 (auth), 404 (not found), 409 (conflict), 503 (ledger down)
-12. Log full error server-side (`log.Printf("ERROR ...")`) — return generic message to client
+8. **Three client processes**, one per org, on separate ports:
+   - Org1 (Manufacturer) → 8080
+   - Org2 (Distributor) → 8081
+   - Org3 (Retailer) → 8082
+9. Each client uses its own `crypto-OrgN/` dir, `wallet-OrgN/` dir, and connection profile
+10. All `/api/v1/` routes require JWT Bearer token — set `JWT_SECRET` env var
+11. Validate all IDs: alphanumeric + `_-`, max 64 chars, before submitting to chaincode
+12. Return specific HTTP codes: 400 (validation), 401 (auth), 404 (not found), 409 (conflict), 503 (ledger down)
+13. Log full error server-side — return generic message to client
 
 ---
 
@@ -150,7 +200,7 @@ Do not change port assignments without updating `.env.example` and all Docker Co
 1. **TLS everywhere** — all peer, orderer, CA communication uses TLS
 2. Crypto materials live in `organizations/` — gitignored, never commit
 3. Regenerate all certs through CA enrollment scripts (003-setup-ca.sh) — never create manually
-4. User identities stored in `fabric-network/client/crypto/wallet/`
+4. User identities stored in `fabric-network/client/wallet-OrgN/`
 5. Rotate certs by re-running 002 + 003 + updating connection profile
 6. CA admin credentials in `.env` — treat as secrets, never log
 7. `JWT_SECRET` must be set to a strong random value in production — never use the dev default
@@ -162,10 +212,12 @@ Do not change port assignments without updating `.env.example` and all Docker Co
 
 1. All services defined in generated Docker Compose files under `docker-compose/`
 2. Resource limits (CPU/memory) set per service via env vars — always cap them
-3. CouchDB used as state DB (not LevelDB) — required for rich queries
-4. PostgreSQL used as CA backend (not SQLite) — required for production-grade CA
-5. Container names follow domain convention: `peer0.org1.example.com`
-6. All containers on same Docker network for single-machine; use external host vars for multi-machine
+3. CouchDB used as state DB (not LevelDB) — required for rich queries; skip local containers with `DEPLOY_COUCHDB=false`
+4. PostgreSQL used as CA backend (not SQLite) — required for production-grade CA; skip local containers with `DEPLOY_POSTGRES=false`
+5. Container names follow domain convention: `peer0.org1.example.com`, `postgres-org1`, `ca-org1`
+6. All containers use `network_mode: host` — do not add bridge network entries
+7. When `DEPLOY_POSTGRES=true`, each postgres container must bind a unique host port (5435–5438)
+8. Teardown only removes containers matching fabric-managed name patterns — external containers must use distinct names
 
 ---
 
@@ -191,9 +243,9 @@ Do not change port assignments without updating `.env.example` and all Docker Co
 
 ## Git Rules
 
-1. Never commit: `organizations/`, `docker-compose/`, `config/channel-artifacts/`, `*.block`, `*.tx`, `*.tar.gz`, `.env`
+1. Never commit: `organizations/`, `fabric-network/organizations/`, `docker-compose/`, `config/channel-artifacts/`, `*.block`, `*.tx`, `*.tar.gz`, `.env`
 2. Always commit: `.env.example` changes when adding new env vars
-3. Commit messages: imperative, lowercase, short (`fix peer TLS path`, `add org2 CouchDB config`)
+3. Commit messages: imperative, lowercase, short (`fix peer TLS path`, `add org3 CouchDB config`)
 4. No WIP commits to main — branch for experiments
 
 ---
@@ -218,7 +270,7 @@ Update versions only intentionally — test full network after any version chang
 
 ## Channel Configuration
 
-- Channel name: `mychannel` (hardcoded in scripts and connection profile)
-- Profile: `TwoOrgsChannel`
-- Genesis profile: `TwoOrgsOrdererGenesis`
+- Channel name: `mychannel`
+- Profile: `ThreeOrgsChannel`
+- Genesis profile: `ThreeOrgsOrdererGenesis`
 - Changing channel name requires updating scripts, connection profile, and env vars
