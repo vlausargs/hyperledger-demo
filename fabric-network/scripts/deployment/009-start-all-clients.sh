@@ -177,38 +177,39 @@ start_client_for_org() {
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-print_status $GREEN "=== Starting Supply Chain Clients (All Orgs) ==="
+print_status $GREEN "=== Starting Supply Chain Clients ==="
+echo "  DEPLOY_ORG1=${DEPLOY_ORG1}  DEPLOY_ORG2=${DEPLOY_ORG2}  DEPLOY_ORG3=${DEPLOY_ORG3}"
+echo ""
 
 # Build once
 build_client
 
-# Setup crypto for each org
+# Setup crypto and start clients for enabled orgs only
 print_status $YELLOW "Setting up crypto materials..."
-setup_crypto_for_org 1 "${ORG1_DOMAIN}" "${ORG1_NAME}" "${PEER0_ORG1_PORT}" "${CA_ORG1_PORT}" "${CA_ORG1_NAME}"
-setup_crypto_for_org 2 "${ORG2_DOMAIN}" "${ORG2_NAME}" "${PEER0_ORG2_PORT}" "${CA_ORG2_PORT}" "${CA_ORG2_NAME}"
-setup_crypto_for_org 3 "${ORG3_DOMAIN}" "${ORG3_NAME}" "${PEER0_ORG3_PORT}" "${CA_ORG3_PORT}" "${CA_ORG3_NAME}"
+[ "${DEPLOY_ORG1}" = "true" ] && setup_crypto_for_org 1 "${ORG1_DOMAIN}" "${ORG1_NAME}" "${PEER0_ORG1_PORT}" "${CA_ORG1_PORT}" "${CA_ORG1_NAME}"
+[ "${DEPLOY_ORG2}" = "true" ] && setup_crypto_for_org 2 "${ORG2_DOMAIN}" "${ORG2_NAME}" "${PEER0_ORG2_PORT}" "${CA_ORG2_PORT}" "${CA_ORG2_NAME}"
+[ "${DEPLOY_ORG3}" = "true" ] && setup_crypto_for_org 3 "${ORG3_DOMAIN}" "${ORG3_NAME}" "${PEER0_ORG3_PORT}" "${CA_ORG3_PORT}" "${CA_ORG3_NAME}"
 
-# Start clients
-start_client_for_org 1 "${ORG1_DOMAIN}" "${ORG1_NAME}" "${PEER0_ORG1_PORT}" "${CA_ORG1_PORT}" "${CA_ORG1_NAME}" "8080"
-start_client_for_org 2 "${ORG2_DOMAIN}" "${ORG2_NAME}" "${PEER0_ORG2_PORT}" "${CA_ORG2_PORT}" "${CA_ORG2_NAME}" "8081"
-start_client_for_org 3 "${ORG3_DOMAIN}" "${ORG3_NAME}" "${PEER0_ORG3_PORT}" "${CA_ORG3_PORT}" "${CA_ORG3_NAME}" "8082"
+[ "${DEPLOY_ORG1}" = "true" ] && start_client_for_org 1 "${ORG1_DOMAIN}" "${ORG1_NAME}" "${PEER0_ORG1_PORT}" "${CA_ORG1_PORT}" "${CA_ORG1_NAME}" "8080"
+[ "${DEPLOY_ORG2}" = "true" ] && start_client_for_org 2 "${ORG2_DOMAIN}" "${ORG2_NAME}" "${PEER0_ORG2_PORT}" "${CA_ORG2_PORT}" "${CA_ORG2_NAME}" "8081"
+[ "${DEPLOY_ORG3}" = "true" ] && start_client_for_org 3 "${ORG3_DOMAIN}" "${ORG3_NAME}" "${PEER0_ORG3_PORT}" "${CA_ORG3_PORT}" "${CA_ORG3_NAME}" "8082"
 
 print_status $GREEN ""
-print_status $GREEN "=== All Clients Running ==="
+print_status $GREEN "=== Clients Running ==="
 echo ""
-echo "  Org1 (Manufacturer) → http://localhost:8080  log: /tmp/fabric-client-org1.log"
-echo "  Org2 (Distributor)  → http://localhost:8081  log: /tmp/fabric-client-org2.log"
-echo "  Org3 (Retailer)     → http://localhost:8082  log: /tmp/fabric-client-org3.log"
+[ "${DEPLOY_ORG1}" = "true" ] && echo "  Org1 (Manufacturer) → http://localhost:8080  log: /tmp/fabric-client-org1.log"
+[ "${DEPLOY_ORG2}" = "true" ] && echo "  Org2 (Distributor)  → http://localhost:8081  log: /tmp/fabric-client-org2.log"
+[ "${DEPLOY_ORG3}" = "true" ] && echo "  Org3 (Retailer)     → http://localhost:8082  log: /tmp/fabric-client-org3.log"
 echo ""
 echo "  Health checks:"
-echo "    curl http://localhost:8080/health"
-echo "    curl http://localhost:8081/health"
-echo "    curl http://localhost:8082/health"
+[ "${DEPLOY_ORG1}" = "true" ] && echo "    curl http://localhost:8080/health"
+[ "${DEPLOY_ORG2}" = "true" ] && echo "    curl http://localhost:8081/health"
+[ "${DEPLOY_ORG3}" = "true" ] && echo "    curl http://localhost:8082/health"
 echo ""
 echo "  Stop all clients:"
 echo "    pkill -f fabric-client"
 echo ""
 print_status $YELLOW "Login credentials: username=admin  password=asdqwe123"
 echo ""
-print_status $YELLOW "Org2 accepts custody transfers initiated by Org1."
-print_status $YELLOW "Org3 accepts custody transfers initiated by Org2."
+[ "${DEPLOY_ORG2}" = "true" ] && print_status $YELLOW "Org2 accepts custody transfers initiated by Org1."
+[ "${DEPLOY_ORG3}" = "true" ] && print_status $YELLOW "Org3 accepts custody transfers initiated by Org2."
