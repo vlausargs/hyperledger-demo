@@ -78,8 +78,9 @@ echo ""
 stop_containers() {
     print_status $YELLOW "Stopping and removing containers..."
 
-    # Get all fabric-related containers
-    local containers=$(docker ps -a --format "{{.Names}}" | grep -E "orderer|peer|ca|couchdb|postgres|cli" | grep -v rabbitmq | grep -v elasticsearch | grep -v openbao | grep -v redis || true)
+    # Get fabric-related containers — exclude standalone external postgres containers
+    # (those managed by our compose files have names like postgres-orderer, postgres-org1, etc.)
+    local containers=$(docker ps -a --format "{{.Names}}" | grep -E "orderer|peer|ca-ord|ca-org|couchdb|postgres-ord|postgres-org|cli" | grep -v rabbitmq | grep -v elasticsearch | grep -v openbao | grep -v redis || true)
 
     if [ -z "$containers" ]; then
         print_status $BLUE "No Fabric containers found"

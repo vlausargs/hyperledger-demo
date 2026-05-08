@@ -1,28 +1,21 @@
 #!/bin/bash
 
 # Script 009: Start Client Application
-# This script builds and starts the Go client application with Gin framework
+# Starts one client process per org: Org1→8080, Org2→8081, Org3→8082
 
 set -e
 
-# Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Function to print colored output
-print_status() {
-    local color=$1
-    local message=$2
-    echo -e "${color}${message}${NC}"
-}
+print_status() { echo -e "${1}${2}${NC}"; }
 
-# Load environment variables
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-# Source fabric-env.sh helper script for local binary usage
 source "${PROJECT_ROOT}/fabric-network/scripts/helpers/fabric-env.sh"
 
 if [ ! -f "${PROJECT_ROOT}/.env" ]; then
@@ -32,423 +25,225 @@ fi
 
 source "${PROJECT_ROOT}/.env"
 
+DEPLOY_ORG1=${DEPLOY_ORG1:-true}
+DEPLOY_ORG2=${DEPLOY_ORG2:-true}
+DEPLOY_ORG3=${DEPLOY_ORG3:-false}
+
 print_status $GREEN "=== Starting Fabric Client Application ==="
-print_status $YELLOW "Client Configuration:"
-echo "  Channel ID: ${CHANNEL_NAME}"
-echo "  Chaincode ID: ${CHAINCODE_NAME}"
-echo "  Server Port: ${CLIENT_PORT}"
-echo "  Mode: ${CLIENT_MODE}"
+echo "  Channel:   ${CHANNEL_NAME}"
+echo "  Chaincode: ${CHAINCODE_NAME}"
+echo "  Org1:      ${DEPLOY_ORG1} → port 8080"
+echo "  Org2:      ${DEPLOY_ORG2} → port 8081"
+echo "  Org3:      ${DEPLOY_ORG3} → port 8082"
 echo ""
 
-# Verify prerequisites
+# Verify Go
 print_status $YELLOW "Verifying prerequisites..."
-
-# Prefer gvm go1.25.10 if available
 if [ -d "$HOME/.gvm/gos/go1.25.10/bin" ]; then
     export GOROOT="$HOME/.gvm/gos/go1.25.10"
     export PATH="$HOME/.gvm/gos/go1.25.10/bin:$PATH"
 fi
-
-# Check if Go is installed
 if ! command -v go &> /dev/null; then
-    print_status $RED "Error: Go is not installed. Please install Go 1.19 or higher."
+    print_status $RED "Error: Go is not installed."
     exit 1
 fi
-
-GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-print_status $GREEN "✓ Go version: $GO_VERSION"
-
-# # Check if chaincode is deployed
-# if [ "$DEPLOY_ORG1" = true ]; then
-#     if ! docker ps | grep -q "peer0.${ORG1_DOMAIN}"; then
-#         print_status $RED "Error: Org1 peer is not running. Chaincode might not be deployed."
-#         exit 1
-#     fi
-# elif [ "$DEPLOY_ORG2" = true ]; then
-#     if ! docker ps | grep -q "peer0.${ORG2_DOMAIN}"; then
-#         print_status $RED "Error: Org2 peer is not running. Chaincode might not be deployed."
-#         exit 1
-#     fi
-# fi
-
+print_status $GREEN "✓ Go version: $(go version | awk '{print $3}')"
 print_status $GREEN "✓ Prerequisites verified"
 
-# Function to setup crypto files for client
-setup_crypto() {
-    print_status $YELLOW "Setting up crypto files for client..."
+# -------------------------------------------------------------------
+# setup_org_crypto <org_domain> <org_msp> <ca_port> <peer_port> <crypto_dir>
+# -------------------------------------------------------------------
+setup_org_crypto() {
+    local org_domain=$1
+    local org_msp=$2
+    local ca_port=$3
+    local peer_port=$4
+    local crypto_dir=$5
 
-    # Check if fabric-ca-client is available
-    if ! command -v fabric-ca-client &> /dev/null; then
-        print_status $RED "Error: fabric-ca-client not found. Please install Fabric CA client."
-        exit 1
-    fi
+    mkdir -p "${crypto_dir}/signcerts" "${crypto_dir}/keystore"
 
-    # Create crypto directory structure
-    local client_crypto_dir="${PROJECT_ROOT}/fabric-network/client/crypto"
-    mkdir -p "${client_crypto_dir}/signcerts"
-    mkdir -p "${client_crypto_dir}/keystore"
+    # TLS CA cert
+    cp "${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/peer0.${org_domain}/tls/ca.crt" \
+       "${crypto_dir}/ca.crt"
 
-    # Copy TLS CA certificate (from peer's TLS CA)
-    if [ "$DEPLOY_ORG1" = true ]; then
-        # Copy peer TLS CA certificate
-        cp "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt" \
-           "${client_crypto_dir}/ca.crt"
-        print_status $GREEN "✓ Copied TLS CA certificate"
+    # User cert + key
+    local user_msp="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/user1.${org_domain}/msp"
 
-        # Copy user certificate and private key from user1 (client identity)
-        local user1_msp_dir="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/user1.${ORG1_DOMAIN}/msp"
-        if [ -f "${user1_msp_dir}/signcerts/cert.pem" ]; then
-            cp "${user1_msp_dir}/signcerts/cert.pem" "${client_crypto_dir}/signcerts/cert.pem"
-            print_status $GREEN "✓ Copied ${ORG1_NAME} user certificate (user1)"
-        else
-            print_status $RED "✗ User certificate not found at ${user1_msp_dir}/signcerts/cert.pem"
-            exit 1
-        fi
+    local cert="${user_msp}/signcerts/cert.pem"
+    [ -f "$cert" ] || { print_status $RED "✗ Cert not found: $cert"; exit 1; }
+    cp "$cert" "${crypto_dir}/signcerts/cert.pem"
 
-        # Copy private key
-        if [ -d "${user1_msp_dir}/keystore" ]; then
-            local key_file=$(find "${user1_msp_dir}/keystore" -name "*_sk" | head -n 1)
-            if [ -n "$key_file" ]; then
-                cp "$key_file" "${client_crypto_dir}/keystore/priv_sk"
-                print_status $GREEN "✓ Copied ${ORG1_NAME} user private key (user1)"
-            else
-                print_status $RED "✗ Private key not found in ${user1_msp_dir}/keystore"
-                exit 1
-            fi
-        else
-            print_status $RED "✗ Keystore directory not found at ${user1_msp_dir}/keystore"
-            exit 1
-        fi
+    local key=$(find "${user_msp}/keystore" -name "*_sk" | head -n 1)
+    [ -n "$key" ] || { print_status $RED "✗ Key not found in ${user_msp}/keystore"; exit 1; }
+    cp "$key" "${crypto_dir}/keystore/priv_sk"
 
-        # Copy MSP config file
-        if [ -f "${user1_msp_dir}/config.yaml" ]; then
-            cp "${user1_msp_dir}/config.yaml" "${client_crypto_dir}/config.yaml"
-            print_status $GREEN "✓ Copied ${ORG1_NAME} MSP config (user1)"
-        else
-            print_status $RED "✗ MSP config not found at ${user1_msp_dir}/config.yaml"
-            exit 1
-        fi
+    [ -f "${user_msp}/config.yaml" ] && cp "${user_msp}/config.yaml" "${crypto_dir}/config.yaml"
 
-        # Create connection profile (simplified version)
-        cat > "${client_crypto_dir}/connection-profile.yaml" << EOF
-name: "test-network"
+    # Connection profile
+    local org_short="${org_msp%MSP}"  # Org1MSP → Org1
+    cat > "${crypto_dir}/connection-profile.yaml" << EOF
+name: "fabric-network-${org_short}"
 version: "1.0.0"
 client:
-  organization: Org1
+  organization: ${org_short}
   connection:
     timeout:
       peer:
         endorser: '300'
 organizations:
-  Org1:
-    mspid: ${ORG1_NAME}
+  ${org_short}:
+    mspid: ${org_msp}
     peers:
-    - peer0.${ORG1_DOMAIN}
+    - peer0.${org_domain}
     certificateAuthorities:
-    - ca.${ORG1_DOMAIN}
+    - ca.${org_domain}
 peers:
-  peer0.${ORG1_DOMAIN}:
-    url: grpcs://peer0.${ORG1_DOMAIN}:${PEER0_ORG1_PORT}
+  peer0.${org_domain}:
+    url: grpcs://peer0.${org_domain}:${peer_port}
     tlsCACerts:
       pem: |
-$(cat "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/peers/peer0.${ORG1_DOMAIN}/tls/ca.crt" | sed 's/^/        /')
+$(cat "${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/peers/peer0.${org_domain}/tls/ca.crt" | sed 's/^/        /')
     grpcOptions:
-      ssl-target-name-override: peer0.${ORG1_DOMAIN}
+      ssl-target-name-override: peer0.${org_domain}
 certificateAuthorities:
-  ca.${ORG1_DOMAIN}:
-    url: https://localhost:${CA_ORG1_PORT}
-    caName: ca.${ORG1_DOMAIN}
+  ca.${org_domain}:
+    url: https://localhost:${ca_port}
+    caName: ca.${org_domain}
     tlsCACerts:
       pem: |
-$(cat "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/ca/msp/cacerts/localhost-${CA_ORG1_PORT}.pem" | sed 's/^/        /')
+$(cat "${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/ca/msp/cacerts/localhost-${ca_port}.pem" | sed 's/^/        /')
     httpOptions:
       verify: false
 EOF
-    fi
 
-    print_status $GREEN "✓ Connection profile created"
+    print_status $GREEN "✓ Crypto + connection profile ready for ${org_msp} (port ${peer_port})"
 }
 
-# Setup crypto files
-setup_crypto
+# -------------------------------------------------------------------
+# start_org_client <org_domain> <org_msp> <ca_name> <ca_port> <server_port> <bootstrap_admin_dir>
+# -------------------------------------------------------------------
+start_org_client() {
+    local org_domain=$1
+    local org_msp=$2
+    local ca_name=$3
+    local ca_port=$4
+    local server_port=$5
+    local bootstrap_admin_dir=$6
 
-# Build the client application
+    local org_short="${org_msp%MSP}"
+    local crypto_dir="${PROJECT_ROOT}/fabric-network/client/crypto-${org_short}"
+    local wallet_dir="${PROJECT_ROOT}/fabric-network/client/wallet-${org_short}"
+    local log_file="/tmp/fabric-client-${org_short}.log"
+
+    print_status $YELLOW "Setting up ${org_msp} client (port ${server_port})..."
+
+    local peer_port
+    case "$org_msp" in
+        Org1MSP) peer_port="${PEER0_ORG1_PORT}" ;;
+        Org2MSP) peer_port="${PEER0_ORG2_PORT}" ;;
+        Org3MSP) peer_port="${PEER0_ORG3_PORT}" ;;
+    esac
+
+    setup_org_crypto "${org_domain}" "${org_msp}" "${ca_port}" "${peer_port}" "${crypto_dir}"
+
+    mkdir -p "$wallet_dir"
+
+    WALLET_PATH="${wallet_dir}" \
+    CHANNEL_ID="${CHANNEL_NAME}" \
+    CHAINCODE_ID="${CHAINCODE_NAME}" \
+    SERVER_PORT="${server_port}" \
+    GIN_MODE="${CLIENT_MODE}" \
+    TLS_CERT_PATH="${crypto_dir}" \
+    CONNECTION_PROFILE="${crypto_dir}/connection-profile.yaml" \
+    JWT_SECRET="${JWT_SECRET:-hlf-demo-jwt-secret-change-this-in-production}" \
+    CA_URL="http://localhost:${ca_port}" \
+    CA_NAME="${ca_name}" \
+    MSP_ID="${org_msp}" \
+    CA_ADMIN_MSP_DIR="${bootstrap_admin_dir}" \
+    GODEBUG=netdns=cgo \
+    nohup "${PROJECT_ROOT}/fabric-network/client/fabric-client" > "${log_file}" 2>&1 &
+
+    local pid=$!
+    sleep 3
+
+    if ! ps -p $pid > /dev/null 2>&1; then
+        print_status $RED "✗ ${org_msp} client failed to start — check ${log_file}"
+        exit 1
+    fi
+
+    # Wait for health
+    local attempt=1
+    while [ $attempt -le 30 ]; do
+        if curl -s "http://localhost:${server_port}/health" > /dev/null 2>&1; then
+            print_status $GREEN "✓ ${org_msp} client ready on port ${server_port} (PID: ${pid})"
+            return 0
+        fi
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+
+    print_status $RED "✗ ${org_msp} client timed out — check ${log_file}"
+    exit 1
+}
+
+# -------------------------------------------------------------------
+# Build binary once
+# -------------------------------------------------------------------
 print_status $YELLOW "Building client application..."
-
 cd "${PROJECT_ROOT}/fabric-network/client"
 
-# Download dependencies
 print_status $YELLOW "Downloading Go dependencies..."
-go mod download 2>&1 || {
-    print_status $RED "Error: Failed to download Go dependencies"
-    print_status $YELLOW "Attempting to fix go.mod file..."
+go mod download 2>&1 || go mod download
 
-    # Try to fix go.mod file if needed
-    sed -i '/^```/d' go.mod 2>/dev/null || true
+print_status $YELLOW "Compiling..."
+go build -o fabric-client main.go
 
-    # Try downloading again
-    go mod download 2>&1 || {
-        print_status $RED "Error: Still failed to download dependencies"
-        print_status $YELLOW "Please check your network connection and try again"
-        exit 1
-    }
-}
+print_status $GREEN "✓ Client binary built"
 
-print_status $GREEN "✓ Dependencies downloaded"
-
-# Build the application
-print_status $YELLOW "Compiling Go application..."
-go build -o fabric-client main.go 2>&1 || {
-    print_status $RED "Error: Failed to build client application"
-    print_status $YELLOW "Checking build errors..."
-    go build -o fabric-client main.go
-}
-
-if [ ! -f "fabric-client" ]; then
-    print_status $RED "Error: Binary file not found after build"
-    exit 1
-fi
-
-print_status $GREEN "✓ Client application built successfully"
-
-# Set environment variables for the client
-export WALLET_PATH="${PROJECT_ROOT}/fabric-network/client/wallet"
-export CHANNEL_ID="${CHANNEL_NAME}"
-export CHAINCODE_ID="${CHAINCODE_NAME}"
-export SERVER_PORT="${CLIENT_PORT}"
-export GIN_MODE="${CLIENT_MODE}"
-export TLS_CERT_PATH="${PROJECT_ROOT}/fabric-network/client/crypto"
-export CONNECTION_PROFILE="${PROJECT_ROOT}/fabric-network/client/crypto/connection-profile.yaml"
-export JWT_SECRET="${JWT_SECRET:-hlf-demo-jwt-secret-change-this-in-production}"
-export CA_URL="http://localhost:${CA_ORG1_PORT}"
-export CA_NAME="${CA_ORG1_NAME}"
-export MSP_ID="${ORG1_NAME}"
-export CA_ADMIN_MSP_DIR="${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/bootstrap-admin.${ORG1_DOMAIN}/msp"
-
-# Create wallet directory
-mkdir -p "$WALLET_PATH"
-
-# Start the client application
-print_status $YELLOW "Starting client application..."
-
-# Check if already running
+# Stop any existing instances
 if pgrep -f "fabric-client" > /dev/null; then
-    print_status $YELLOW "Client application is already running. Stopping it..."
-    pkill -f "fabric-client"
+    print_status $YELLOW "Stopping existing client instances..."
+    pkill -f "fabric-client" || true
     sleep 2
 fi
 
-# Start the application in background
-# GODEBUG=netdns=cgo forces Go to use the system CGO DNS resolver (respects /etc/hosts)
-# instead of the pure Go resolver which may bypass /etc/hosts for service-discovered peers.
-export GODEBUG=netdns=cgo
-nohup ./fabric-client > /tmp/fabric-client.log 2>&1 &
-CLIENT_PID=$!
-
-# Wait for application to start
-sleep 3
-
-# Check if application is running
-if ps -p $CLIENT_PID > /dev/null; then
-    print_status $GREEN "✓ Client application started successfully (PID: $CLIENT_PID)"
-else
-    print_status $RED "✗ Failed to start client application"
-    print_status $YELLOW "Check logs: cat /tmp/fabric-client.log"
-    exit 1
+# -------------------------------------------------------------------
+# Start one client per deployed org
+# -------------------------------------------------------------------
+if [ "$DEPLOY_ORG1" = true ]; then
+    start_org_client \
+        "${ORG1_DOMAIN}" \
+        "${ORG1_NAME}" \
+        "${CA_ORG1_NAME}" \
+        "${CA_ORG1_PORT}" \
+        "8080" \
+        "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG1_DOMAIN}/users/bootstrap-admin.${ORG1_DOMAIN}/msp"
 fi
 
-# Wait for server to be ready
-print_status $YELLOW "Waiting for server to be ready..."
-
-MAX_ATTEMPTS=30
-ATTEMPT=1
-
-while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-    if curl -s http://localhost:${CLIENT_PORT}/health > /dev/null 2>&1; then
-        print_status $GREEN "✓ Server is ready and listening on port ${CLIENT_PORT}"
-        break
-    fi
-
-    echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS: Waiting for server..."
-    sleep 2
-    ATTEMPT=$((ATTEMPT + 1))
-done
-
-if [ $ATTEMPT -gt $MAX_ATTEMPTS ]; then
-    print_status $RED "✗ Server failed to start within timeout period"
-    print_status $YELLOW "Check logs: cat /tmp/fabric-client.log"
-    exit 1
+if [ "$DEPLOY_ORG2" = true ]; then
+    start_org_client \
+        "${ORG2_DOMAIN}" \
+        "${ORG2_NAME}" \
+        "${CA_ORG2_NAME}" \
+        "${CA_ORG2_PORT}" \
+        "8081" \
+        "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG2_DOMAIN}/users/bootstrap-admin.${ORG2_DOMAIN}/msp"
 fi
 
-# Test health endpoint
-print_status $YELLOW "Testing health endpoint..."
-HEALTH_RESPONSE=$(curl -s http://localhost:${CLIENT_PORT}/health)
-echo "  Response: $HEALTH_RESPONSE"
-
-if echo "$HEALTH_RESPONSE" | grep -q "healthy"; then
-    print_status $GREEN "✓ Health check passed"
-else
-    print_status $YELLOW "Health check response unexpected"
+if [ "$DEPLOY_ORG3" = true ]; then
+    start_org_client \
+        "${ORG3_DOMAIN}" \
+        "${ORG3_NAME}" \
+        "${CA_ORG3_NAME}" \
+        "${CA_ORG3_PORT}" \
+        "8082" \
+        "${PROJECT_ROOT}/organizations/peerOrganizations/${ORG3_DOMAIN}/users/bootstrap-admin.${ORG3_DOMAIN}/msp"
 fi
-
-# Display API endpoints
-print_status $YELLOW "=== API Endpoints ==="
-echo ""
-echo "Base URL: http://localhost:${CLIENT_PORT}/api/v1"
-echo ""
-echo "Health Check:"
-echo "  GET  /health"
-echo ""
-echo "Assets:"
-echo "  GET    /assets                    - Get all assets"
-echo "  GET    /assets/:id                - Get specific asset"
-echo "  POST   /assets                    - Create new asset"
-echo "  PUT    /assets/:id                - Update asset"
-echo "  DELETE /assets/:id                - Delete asset"
-echo "  POST   /assets/:id/transfer       - Transfer asset ownership"
-echo "  GET    /assets/:id/history        - Get asset history"
-echo "  GET    /assets/range?start=X&end=Y - Get assets by range"
-echo ""
-echo "Channels:"
-echo "  GET /channels            - Get all channels"
-echo "  GET /channels/:channelId - Get channel info"
-echo ""
-echo "Chaincodes:"
-echo "  GET /chaincodes             - Get all chaincodes"
-echo "  GET /chaincodes/:chaincodeId - Get chaincode info"
-echo ""
-echo "Network:"
-echo "  GET /network/peers          - Get network peers"
-echo "  GET /network/organizations  - Get network organizations"
-echo ""
-echo "Transactions:"
-echo "  GET /transactions        - Get all transactions"
-echo "  GET /transactions/:txId - Get specific transaction"
-echo ""
-
-# Display useful commands
-print_status $YELLOW "=== Useful Commands ==="
-echo ""
-echo "View logs:"
-echo "  tail -f /tmp/fabric-client.log"
-echo ""
-echo "Test health endpoint:"
-echo "  curl http://localhost:${CLIENT_PORT}/health"
-echo ""
-echo "Get all assets:"
-echo "  curl http://localhost:${CLIENT_PORT}/api/v1/assets"
-echo ""
-echo "Create asset:"
-echo '  curl -X POST http://localhost:'${CLIENT_PORT}'/api/v1/assets \'
-echo '    -H "Content-Type: application/json" \'
-echo '    -d '"'"'{"ID":"test1","color":"red","size":10,"owner":"Alice","appraisedValue":100}'"'"''
-echo ""
-echo "Get specific asset:"
-echo "  curl http://localhost:${CLIENT_PORT}/api/v1/assets/test1"
-echo ""
-echo "Update asset:"
-echo '  curl -X PUT http://localhost:'${CLIENT_PORT}'/api/v1/assets/test1 \'
-echo '    -H "Content-Type: application/json" \'
-echo '    -d '"'"'{"color":"blue","size":15,"owner":"Bob","appraisedValue":150}'"'"''
-echo ""
-echo "Transfer asset:"
-echo '  curl -X POST http://localhost:'${CLIENT_PORT}'/api/v1/assets/test1/transfer \'
-echo '    -H "Content-Type: application/json" \'
-echo '    -d '"'"'{"newOwner":"Charlie"}'"'"''
-echo ""
-echo "Stop client application:"
-echo "  pkill -f fabric-client"
-echo ""
-
-# Create a quick start script
-cat > "${PROJECT_ROOT}/fabric-network/client/start.sh" << 'EOF'
-#!/bin/bash
-# Quick start script for Fabric Client
-
-cd "$(dirname "$0")"
-
-# Set environment variables
-export WALLET_PATH="./wallet"
-export CHANNEL_ID="mychannel"
-export CHAINCODE_ID="basic"
-export SERVER_PORT="8080"
-export GIN_MODE="debug"
-export TLS_CERT_PATH="./crypto"
-export CONNECTION_PROFILE="./crypto/connection-profile.yaml"
-export JWT_SECRET="${JWT_SECRET:-hlf-demo-jwt-secret-change-this-in-production}"
-
-# Start application
-./fabric-client
-EOF
-
-chmod +x "${PROJECT_ROOT}/fabric-network/client/start.sh"
-
-# Create a test script
-cat > "${PROJECT_ROOT}/fabric-network/client/test-api.sh" << 'EOF'
-#!/bin/bash
-# Test script for Fabric Client API
-
-BASE_URL="http://localhost:8080/api/v1"
-
-echo "=== Testing Fabric Client API ==="
-echo ""
-
-# Health check
-echo "1. Health Check:"
-curl -s "$BASE_URL/../health" | jq '.'
-echo ""
-
-# Get all assets
-echo "2. Get All Assets:"
-curl -s "$BASE_URL/assets" | jq '.'
-echo ""
-
-# Create a new asset
-echo "3. Create New Asset:"
-curl -X POST "$BASE_URL/assets" \
-  -H "Content-Type: application/json" \
-  -d '{"ID":"api_test_1","color":"purple","size":20,"owner":"API_User","appraisedValue":500}' | jq '.'
-echo ""
-
-# Get specific asset
-echo "4. Get Specific Asset:"
-curl -s "$BASE_URL/assets/api_test_1" | jq '.'
-echo ""
-
-# Update asset
-echo "5. Update Asset:"
-curl -X PUT "$BASE_URL/assets/api_test_1" \
-  -H "Content-Type: application/json" \
-  -d '{"color":"orange","size":25,"owner":"API_User2","appraisedValue":600}' | jq '.'
-echo ""
-
-# Transfer asset
-echo "6. Transfer Asset:"
-curl -X POST "$BASE_URL/assets/api_test_1/transfer" \
-  -H "Content-Type: application/json" \
-  -d '{"newOwner":"API_User3"}' | jq '.'
-echo ""
-
-# Get asset history
-echo "7. Get Asset History:"
-curl -s "$BASE_URL/assets/api_test_1/history" | jq '.'
-echo ""
-
-echo "=== API Testing Complete ==="
-EOF
-
-chmod +x "${PROJECT_ROOT}/fabric-network/client/test-api.sh"
 
 print_status $GREEN "=== Client Application Started Successfully ==="
-print_status $YELLOW "Quick start scripts created:"
-echo "  ${PROJECT_ROOT}/fabric-network/client/start.sh - Start the client application"
-echo "  ${PROJECT_ROOT}/fabric-network/client/test-api.sh - Test the API endpoints"
 echo ""
-print_status $GREEN "Your Hyperledger Fabric network is now ready!"
-print_status $YELLOW "Next steps:"
-echo "  1. Test the API using the provided test script"
-echo "  2. Build your custom client application"
-echo "  3. Deploy your own chaincode"
-echo "  4. Integrate with your existing systems"
+[ "$DEPLOY_ORG1" = true ] && echo "  Org1 (Manufacturer): http://localhost:8080  logs: /tmp/fabric-client-Org1.log"
+[ "$DEPLOY_ORG2" = true ] && echo "  Org2 (Distributor):  http://localhost:8081  logs: /tmp/fabric-client-Org2.log"
+[ "$DEPLOY_ORG3" = true ] && echo "  Org3 (Retailer):     http://localhost:8082  logs: /tmp/fabric-client-Org3.log"
 echo ""
-print_status $GREEN "Happy Blockchain Development!"
+print_status $YELLOW "Stop all: pkill -f fabric-client"

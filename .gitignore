@@ -9,3 +9,4 @@
 *.tx
 *.tar.gz
 .env
+fabric-network/organizations/

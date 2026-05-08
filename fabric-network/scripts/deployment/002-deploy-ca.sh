@@ -32,12 +32,15 @@ source "${PROJECT_ROOT}/.env"
 
 DEPLOY_POSTGRES=${DEPLOY_POSTGRES:-true}
 
-# Resolve postgres host: use external host when postgres is not deployed locally
+# Resolve postgres host for CA datasource
+# Both local postgres containers and CA containers use network_mode: host,
+# so the CA must connect via localhost (container names are not resolvable).
+# When postgres is external (DEPLOY_POSTGRES=false), use the configured external host.
 if [ "${DEPLOY_POSTGRES}" = "true" ]; then
-    POSTGRES_ORDERER_DBHOST="${POSTGRES_ORDERER_HOST}"
-    POSTGRES_ORG1_DBHOST="${POSTGRES_ORG1_HOST}"
-    POSTGRES_ORG2_DBHOST="${POSTGRES_ORG2_HOST}"
-    POSTGRES_ORG3_DBHOST="${POSTGRES_ORG3_HOST}"
+    POSTGRES_ORDERER_DBHOST="localhost"
+    POSTGRES_ORG1_DBHOST="localhost"
+    POSTGRES_ORG2_DBHOST="localhost"
+    POSTGRES_ORG3_DBHOST="localhost"
 else
     POSTGRES_ORDERER_DBHOST="${POSTGRES_ORDERER_EXTERNAL_HOST}"
     POSTGRES_ORG1_DBHOST="${POSTGRES_ORG1_EXTERNAL_HOST}"
@@ -130,7 +133,7 @@ registry:
 
 db:
   type: postgres
-  datasource: host=${db_host} port=${db_port} user=${db_user} password='${db_pass}' dbname=${db_name} sslmode=prefer
+  datasource: host=${db_host} port=${db_port} user=${db_user} password='${db_pass}' dbname=${db_name} search_path=${db_name} sslmode=disable
   tls:
       enabled: false
       certfiles:
@@ -244,6 +247,27 @@ EOF
     print_status $GREEN "✓ Generated docker-compose: ${compose_file}"
 }
 
+# Function to create postgres schema matching db_name
+ensure_pg_schema() {
+    local db_host=$1
+    local db_port=$2
+    local db_user=$3
+    local db_pass=$4
+    local db_name=$5
+
+    # When containers use network_mode: host, always connect via localhost from the host shell
+    local psql_host="${db_host}"
+    if [ "${DEPLOY_POSTGRES}" = "true" ]; then
+        psql_host="localhost"
+    fi
+
+    print_status $YELLOW "Ensuring schema '${db_name}' in database '${db_name}'..."
+    PGPASSWORD="${db_pass}" psql -h "${psql_host}" -p "${db_port}" -U "${db_user}" -d "${db_name}" \
+        -c "CREATE SCHEMA IF NOT EXISTS ${db_name}; GRANT ALL ON SCHEMA ${db_name} TO ${db_user};" \
+        > /dev/null 2>&1 && print_status $GREEN "✓ Schema '${db_name}' ready" \
+        || print_status $YELLOW "⚠ Schema creation skipped (psql not available or DB not reachable)"
+}
+
 # Create directories
 CONFIG_DIR="${PROJECT_ROOT}/config"
 COMPOSE_DIR="${PROJECT_ROOT}/docker-compose/ca"
@@ -281,7 +305,8 @@ if [ "$DEPLOY_ORDERER" = true ]; then
         "${config_dir}" \
         "${compose_file}"
 
-    docker compose -f "$compose_file" up -d
+    ensure_pg_schema "${POSTGRES_ORDERER_DBHOST}" "${POSTGRES_ORDERER_PORT}" "${POSTGRES_ORDERER_USER}" "${POSTGRES_ORDERER_PASSWORD}" "${POSTGRES_ORDERER_DB}"
+    docker compose -f "$compose_file" up -d --force-recreate
     print_status $GREEN "✓ Orderer CA deployed successfully"
 fi
 
@@ -312,7 +337,8 @@ if [ "$DEPLOY_ORG1" = true ]; then
         "${config_dir}" \
         "${compose_file}"
 
-    docker compose -f "$compose_file" up -d
+    ensure_pg_schema "${POSTGRES_ORG1_DBHOST}" "${POSTGRES_ORG1_PORT}" "${POSTGRES_ORG1_USER}" "${POSTGRES_ORG1_PASSWORD}" "${POSTGRES_ORG1_DB}"
+    docker compose -f "$compose_file" up -d --force-recreate
     print_status $GREEN "✓ Org1 CA deployed successfully"
 fi
 
@@ -343,7 +369,8 @@ if [ "$DEPLOY_ORG2" = true ]; then
         "${config_dir}" \
         "${compose_file}"
 
-    docker compose -f "$compose_file" up -d
+    ensure_pg_schema "${POSTGRES_ORG2_DBHOST}" "${POSTGRES_ORG2_PORT}" "${POSTGRES_ORG2_USER}" "${POSTGRES_ORG2_PASSWORD}" "${POSTGRES_ORG2_DB}"
+    docker compose -f "$compose_file" up -d --force-recreate
     print_status $GREEN "✓ Org2 CA deployed successfully"
 fi
 
@@ -372,7 +399,8 @@ if [ "$DEPLOY_ORG3" = true ]; then
         "${config_dir}" \
         "${compose_file}"
 
-    docker compose -f "$compose_file" up -d
+    ensure_pg_schema "${POSTGRES_ORG3_DBHOST}" "${POSTGRES_ORG3_PORT}" "${POSTGRES_ORG3_USER}" "${POSTGRES_ORG3_PASSWORD}" "${POSTGRES_ORG3_DB}"
+    docker compose -f "$compose_file" up -d --force-recreate
     print_status $GREEN "✓ Org3 CA deployed successfully"
 fi
 
