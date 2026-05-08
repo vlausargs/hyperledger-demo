@@ -42,21 +42,21 @@ build_client() {
 }
 
 # ─── Setup crypto for one org ─────────────────────────────────────────────────
+# Args: org_domain  org_msp  peer_port  ca_port  ca_name
 
 setup_crypto_for_org() {
-    local org_num=$1      # 1, 2, 3
-    local org_domain=$2   # org1.example.com
-    local org_msp=$3      # Org1MSP
-    local peer_port=$4    # 8051
-    local ca_port=$5      # 8054
-    local ca_name=$6      # ca-org1
+    local org_domain=$1   # org1.example.com
+    local org_msp=$2      # Org1MSP
+    local peer_port=$3    # 8051
+    local ca_port=$4      # 8054
+    local ca_name=$5      # ca-org1
 
-    local crypto_dir="${CLIENT_DIR}/crypto-org${org_num}"
+    local crypto_dir="${CLIENT_DIR}/crypto-${org_msp}"
     local orgs_dir="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}"
 
     mkdir -p "${crypto_dir}/signcerts" "${crypto_dir}/keystore"
 
-    # TLS CA cert (bundled all-org ca.crt for the peer)
+    # TLS CA cert
     cp "${orgs_dir}/peers/peer0.${org_domain}/tls/ca.crt" "${crypto_dir}/ca.crt"
 
     # User identity
@@ -72,16 +72,16 @@ setup_crypto_for_org() {
     ca_pem=$(cat "${orgs_dir}/ca/msp/cacerts/localhost-${ca_port}.pem" | sed 's/^/        /')
 
     cat > "${crypto_dir}/connection-profile.yaml" << EOF
-name: "supply-chain-org${org_num}"
+name: "supply-chain-${org_msp}"
 version: "1.0.0"
 client:
-  organization: Org${org_num}
+  organization: ${org_msp}
   connection:
     timeout:
       peer:
         endorser: '300'
 organizations:
-  Org${org_num}:
+  ${org_msp}:
     mspid: ${org_msp}
     peers:
     - peer0.${org_domain}
@@ -106,39 +106,32 @@ ${ca_pem}
       verify: false
 EOF
 
-    print_status $GREEN "✓ Crypto set up for Org${org_num} (${org_msp})"
+    print_status $GREEN "✓ Crypto set up for ${org_msp}"
 }
 
 # ─── Start one client process ─────────────────────────────────────────────────
+# Args: org_domain  org_msp  peer_port  ca_port  ca_name  server_port
 
 start_client_for_org() {
-    local org_num=$1
-    local org_domain=$2
-    local org_msp=$3
-    local peer_port=$4
-    local ca_port=$5
-    local ca_name=$6
-    local server_port=$7
+    local org_domain=$1
+    local org_msp=$2
+    local peer_port=$3
+    local ca_port=$4
+    local ca_name=$5
+    local server_port=$6
 
-    local crypto_dir="${CLIENT_DIR}/crypto-org${org_num}"
-    local wallet_dir="${CLIENT_DIR}/wallet-org${org_num}"
-    local log_file="/tmp/fabric-client-org${org_num}.log"
+    local crypto_dir="${CLIENT_DIR}/crypto-${org_msp}"
+    local wallet_dir="${CLIENT_DIR}/wallet-${org_msp}"
+    local log_file="/tmp/fabric-client-${org_msp}.log"
     local admin_msp_dir="${PROJECT_ROOT}/organizations/peerOrganizations/${org_domain}/users/bootstrap-admin.${org_domain}/msp"
 
     mkdir -p "$wallet_dir"
 
     # Kill existing instance on this port
-    local existing_pid
-    existing_pid=$(pgrep -f "fabric-client.*-org${org_num}" 2>/dev/null || true)
-    if [ -n "$existing_pid" ]; then
-        kill "$existing_pid" 2>/dev/null || true
-        sleep 1
-    fi
-    # Also kill by port
     fuser -k "${server_port}/tcp" 2>/dev/null || true
     sleep 1
 
-    print_status $YELLOW "Starting Org${org_num} client on port ${server_port}..."
+    print_status $YELLOW "Starting ${org_msp} client on port ${server_port}..."
 
     GODEBUG=netdns=cgo \
     WALLET_PATH="$wallet_dir" \
@@ -156,7 +149,6 @@ start_client_for_org() {
     nohup "${CLIENT_DIR}/fabric-client" > "$log_file" 2>&1 &
 
     local pid=$!
-    # Rename process for easier identification (best-effort)
     disown $pid 2>/dev/null || true
 
     # Wait for ready
@@ -164,14 +156,14 @@ start_client_for_org() {
     local i=1
     while [ $i -le $max ]; do
         if curl -s "http://localhost:${server_port}/health" > /dev/null 2>&1; then
-            print_status $GREEN "✓ Org${org_num} client ready on :${server_port} (PID $pid)"
+            print_status $GREEN "✓ ${org_msp} client ready on :${server_port} (PID $pid)"
             return 0
         fi
         sleep 2
         i=$((i+1))
     done
 
-    print_status $RED "✗ Org${org_num} client failed to start — check $log_file"
+    print_status $RED "✗ ${org_msp} client failed to start — check $log_file"
     return 1
 }
 
@@ -186,20 +178,20 @@ build_client
 
 # Setup crypto and start clients for enabled orgs only
 print_status $YELLOW "Setting up crypto materials..."
-[ "${DEPLOY_ORG1}" = "true" ] && setup_crypto_for_org 1 "${ORG1_DOMAIN}" "${ORG1_NAME}" "${PEER0_ORG1_PORT}" "${CA_ORG1_PORT}" "${CA_ORG1_NAME}"
-[ "${DEPLOY_ORG2}" = "true" ] && setup_crypto_for_org 2 "${ORG2_DOMAIN}" "${ORG2_NAME}" "${PEER0_ORG2_PORT}" "${CA_ORG2_PORT}" "${CA_ORG2_NAME}"
-[ "${DEPLOY_ORG3}" = "true" ] && setup_crypto_for_org 3 "${ORG3_DOMAIN}" "${ORG3_NAME}" "${PEER0_ORG3_PORT}" "${CA_ORG3_PORT}" "${CA_ORG3_NAME}"
+[ "${DEPLOY_ORG1}" = "true" ] && setup_crypto_for_org "${ORG1_DOMAIN}" "${ORG1_NAME}" "${PEER0_ORG1_PORT}" "${CA_ORG1_PORT}" "${CA_ORG1_NAME}"
+[ "${DEPLOY_ORG2}" = "true" ] && setup_crypto_for_org "${ORG2_DOMAIN}" "${ORG2_NAME}" "${PEER0_ORG2_PORT}" "${CA_ORG2_PORT}" "${CA_ORG2_NAME}"
+[ "${DEPLOY_ORG3}" = "true" ] && setup_crypto_for_org "${ORG3_DOMAIN}" "${ORG3_NAME}" "${PEER0_ORG3_PORT}" "${CA_ORG3_PORT}" "${CA_ORG3_NAME}"
 
-[ "${DEPLOY_ORG1}" = "true" ] && start_client_for_org 1 "${ORG1_DOMAIN}" "${ORG1_NAME}" "${PEER0_ORG1_PORT}" "${CA_ORG1_PORT}" "${CA_ORG1_NAME}" "8080"
-[ "${DEPLOY_ORG2}" = "true" ] && start_client_for_org 2 "${ORG2_DOMAIN}" "${ORG2_NAME}" "${PEER0_ORG2_PORT}" "${CA_ORG2_PORT}" "${CA_ORG2_NAME}" "8081"
-[ "${DEPLOY_ORG3}" = "true" ] && start_client_for_org 3 "${ORG3_DOMAIN}" "${ORG3_NAME}" "${PEER0_ORG3_PORT}" "${CA_ORG3_PORT}" "${CA_ORG3_NAME}" "8082"
+[ "${DEPLOY_ORG1}" = "true" ] && start_client_for_org "${ORG1_DOMAIN}" "${ORG1_NAME}" "${PEER0_ORG1_PORT}" "${CA_ORG1_PORT}" "${CA_ORG1_NAME}" "8080"
+[ "${DEPLOY_ORG2}" = "true" ] && start_client_for_org "${ORG2_DOMAIN}" "${ORG2_NAME}" "${PEER0_ORG2_PORT}" "${CA_ORG2_PORT}" "${CA_ORG2_NAME}" "8081"
+[ "${DEPLOY_ORG3}" = "true" ] && start_client_for_org "${ORG3_DOMAIN}" "${ORG3_NAME}" "${PEER0_ORG3_PORT}" "${CA_ORG3_PORT}" "${CA_ORG3_NAME}" "8082"
 
 print_status $GREEN ""
 print_status $GREEN "=== Clients Running ==="
 echo ""
-[ "${DEPLOY_ORG1}" = "true" ] && echo "  Org1 (Manufacturer) → http://localhost:8080  log: /tmp/fabric-client-org1.log"
-[ "${DEPLOY_ORG2}" = "true" ] && echo "  Org2 (Distributor)  → http://localhost:8081  log: /tmp/fabric-client-org2.log"
-[ "${DEPLOY_ORG3}" = "true" ] && echo "  Org3 (Retailer)     → http://localhost:8082  log: /tmp/fabric-client-org3.log"
+[ "${DEPLOY_ORG1}" = "true" ] && echo "  ${ORG1_NAME} (Manufacturer) → http://localhost:8080  log: /tmp/fabric-client-${ORG1_NAME}.log"
+[ "${DEPLOY_ORG2}" = "true" ] && echo "  ${ORG2_NAME} (Distributor)  → http://localhost:8081  log: /tmp/fabric-client-${ORG2_NAME}.log"
+[ "${DEPLOY_ORG3}" = "true" ] && echo "  ${ORG3_NAME} (Retailer)     → http://localhost:8082  log: /tmp/fabric-client-${ORG3_NAME}.log"
 echo ""
 echo "  Health checks:"
 [ "${DEPLOY_ORG1}" = "true" ] && echo "    curl http://localhost:8080/health"
@@ -211,5 +203,5 @@ echo "    pkill -f fabric-client"
 echo ""
 print_status $YELLOW "Login credentials: username=admin  password=asdqwe123"
 echo ""
-[ "${DEPLOY_ORG2}" = "true" ] && print_status $YELLOW "Org2 accepts custody transfers initiated by Org1."
-[ "${DEPLOY_ORG3}" = "true" ] && print_status $YELLOW "Org3 accepts custody transfers initiated by Org2."
+[ "${DEPLOY_ORG2}" = "true" ] && print_status $YELLOW "${ORG2_NAME} accepts custody transfers initiated by ${ORG1_NAME}."
+[ "${DEPLOY_ORG3}" = "true" ] && print_status $YELLOW "${ORG3_NAME} accepts custody transfers initiated by ${ORG2_NAME}."
