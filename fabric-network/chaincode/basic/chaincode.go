@@ -164,10 +164,10 @@ type PagedShipmentResult struct {
 }
 
 type HistoryQueryResult struct {
-	TxID      string          `json:"txId"`
-	Timestamp time.Time       `json:"timestamp"`
-	IsDelete  bool            `json:"isDelete"`
-	Value     json.RawMessage `json:"value"`
+	TxID      string      `json:"txId"`
+	Timestamp time.Time   `json:"timestamp"`
+	IsDelete  bool        `json:"isDelete"`
+	Value     interface{} `json:"value"`
 }
 
 type ProvenanceResult struct {
@@ -274,7 +274,7 @@ func queryProducts(ctx contractapi.TransactionContextInterface, query string) ([
 // findPendingCustody scans CUSTODY~{shipmentID}~ range and returns (count, pendingRecord, error).
 func findPendingCustody(ctx contractapi.TransactionContextInterface, shipmentID string) (int, *CustodyRecord, error) {
 	start := prefixCustody + shipmentID + "~"
-	end := prefixCustody + shipmentID + "~\xff"
+	end := prefixCustody + shipmentID + "~\x7f"
 	iter, err := ctx.GetStub().GetStateByRange(start, end)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to scan custody records: %w", err)
@@ -438,7 +438,7 @@ func (s *SmartContract) GetAllProducts(ctx contractapi.TransactionContextInterfa
 		pageSize = 100
 	}
 	start := prefixProduct
-	end := prefixProduct + "\xff"
+	end := prefixProduct + "\x7f"
 	iter, meta, err := ctx.GetStub().GetStateByRangeWithPagination(start, end, int32(pageSize), bookmark)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get paged products: %w", err)
@@ -493,7 +493,7 @@ func (s *SmartContract) GetProvenance(ctx contractapi.TransactionContextInterfac
 		return nil, err
 	}
 
-	var custody []*CustodyRecord
+	custody := make([]*CustodyRecord, 0)
 	if p.CurrentShipmentID != "" {
 		custody, err = s.GetCustodyChain(ctx, p.CurrentShipmentID)
 		if err != nil {
@@ -504,6 +504,13 @@ func (s *SmartContract) GetProvenance(ctx contractapi.TransactionContextInterfac
 	events, err := s.GetEvents(ctx, productID)
 	if err != nil {
 		return nil, err
+	}
+
+	if history == nil {
+		history = make([]*HistoryQueryResult, 0)
+	}
+	if events == nil {
+		events = make([]*SupplyChainEvent, 0)
 	}
 
 	return &ProvenanceResult{Product: p, History: history, Custody: custody, Events: events}, nil
@@ -619,7 +626,7 @@ func (s *SmartContract) GetAllShipments(ctx contractapi.TransactionContextInterf
 		pageSize = 100
 	}
 	start := prefixShipment
-	end := prefixShipment + "\xff"
+	end := prefixShipment + "\x7f"
 	iter, meta, err := ctx.GetStub().GetStateByRangeWithPagination(start, end, int32(pageSize), bookmark)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get paged shipments: %w", err)
@@ -830,7 +837,7 @@ func (s *SmartContract) RejectCustodyTransfer(ctx contractapi.TransactionContext
 
 func (s *SmartContract) GetCustodyChain(ctx contractapi.TransactionContextInterface, shipmentID string) ([]*CustodyRecord, error) {
 	start := prefixCustody + shipmentID + "~"
-	end := prefixCustody + shipmentID + "~\xff"
+	end := prefixCustody + shipmentID + "~\x7f"
 	iter, err := ctx.GetStub().GetStateByRange(start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get custody chain for shipment %s: %w", shipmentID, err)
@@ -894,7 +901,7 @@ func (s *SmartContract) LogEvent(ctx contractapi.TransactionContextInterface,
 
 func (s *SmartContract) GetEvents(ctx contractapi.TransactionContextInterface, targetID string) ([]*SupplyChainEvent, error) {
 	start := prefixEvent + targetID + "~"
-	end := prefixEvent + targetID + "~\xff"
+	end := prefixEvent + targetID + "~\x7f"
 	iter, err := ctx.GetStub().GetStateByRange(start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get events for target %s: %w", targetID, err)
@@ -1053,11 +1060,15 @@ func collectHistoryForKey(ctx contractapi.TransactionContextInterface, key strin
 		if response.Timestamp != nil {
 			ts = response.Timestamp.AsTime()
 		}
+		var val interface{}
+		if err := json.Unmarshal(response.Value, &val); err != nil {
+			val = string(response.Value)
+		}
 		results = append(results, &HistoryQueryResult{
 			TxID:      response.TxId,
 			Timestamp: ts,
 			IsDelete:  response.IsDelete,
-			Value:     json.RawMessage(response.Value),
+			Value:     val,
 		})
 	}
 	return results, nil

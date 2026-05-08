@@ -1,0 +1,927 @@
+{
+  "info": {
+    "name": "Supply Chain Blockchain API",
+    "description": "Hyperledger Fabric Supply Chain — 3-org logistics network.\n\nSET UP 3 ENVIRONMENTS:\n  Org1 - Manufacturer  →  baseUrl = http://localhost:8080\n  Org2 - Distributor   →  baseUrl = http://localhost:8081\n  Org3 - Retailer      →  baseUrl = http://localhost:8082\n\nAll requests use {{baseUrl}} and {{token}}.\nSwitch environment to act as a different org.\n\nKEY RULE — receiverMsp must be the FINAL destination org.\n  Org1→Org2→Org3 chain: set receiverMsp=Org3MSP when creating the shipment.\n  Org2 is intermediate — stays IN_TRANSIT after accepting from Org1.\n  Only Org3 accepting triggers DELIVERED.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",    "value": "http://localhost:8080", "type": "string", "description": "Override per environment: 8080=Org1, 8081=Org2, 8082=Org3" },
+    { "key": "token",      "value": "", "type": "string", "description": "Set by Login. Override per environment." },
+    { "key": "org1Token",  "value": "", "type": "string", "description": "Saved by scenario leg 1 login. Persists across environment switches." },
+    { "key": "org2Token",  "value": "", "type": "string", "description": "Saved by scenario leg 2 login. Persists across environment switches." },
+    { "key": "org3Token",  "value": "", "type": "string", "description": "Saved by scenario leg 3 login. Persists across environment switches." },
+    { "key": "productId",  "value": "PROD-101",       "type": "string" },
+    { "key": "shipmentId", "value": "SHIP-101",        "type": "string" },
+    { "key": "eventId",    "value": "EVT-001",         "type": "string" },
+    { "key": "recallId",   "value": "RCL-001",         "type": "string" },
+    { "key": "batchId",    "value": "BATCH-2026-01",   "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health",
+        "description": "No auth required. Switch environment to check each org."
+      }
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "    pm.collectionVariables.set('token', res.token);",
+                  "    pm.environment.set('token', res.token);",
+                  "    console.log('Token saved for', pm.environment.get('baseUrl'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"asdqwe123\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "Saves token to {{token}} in both collection and active environment.\nSwitch environment, run Login, then run requests as that org."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-Org Full Flow (Scenario)",
+      "description": "Run legs in order. Switch environment between legs.\n\nLeg 1 — select 'Org1 - Manufacturer' environment\nLeg 2 — select 'Org2 - Distributor' environment\nLeg 3 — select 'Org3 - Retailer' environment\n\nTokens (org1Token/org2Token/org3Token) are collection variables — they persist\nacross environment switches so multi-org steps can reference earlier tokens.",
+      "item": [
+        {
+          "name": "── Leg 1: Org1 Actions (switch to Org1 env) ──",
+          "item": [
+            {
+              "name": "1.1 Login (Org1)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const res = pm.response.json();",
+                      "if (res.token) {",
+                      "    pm.collectionVariables.set('token', res.token);",
+                      "    pm.collectionVariables.set('org1Token', res.token);",
+                      "    pm.environment.set('token', res.token);",
+                      "    console.log('Org1 token saved');",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"asdqwe123\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/auth/login",
+                "description": "Saves to {{token}} and {{org1Token}} (collection var — persists when you switch env)."
+              }
+            },
+            {
+              "name": "1.2 Create Product",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const res = pm.response.json();",
+                      "if (res.id) {",
+                      "    pm.collectionVariables.set('productId', res.id);",
+                      "    console.log('productId:', res.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id\": \"PROD-101\",\n  \"sku\": \"SKU-A101\",\n  \"name\": \"Industrial Widget Alpha\",\n  \"description\": \"Heavy-duty industrial widget for retail distribution\",\n  \"batchId\": \"BATCH-2026-01\",\n  \"manufacturerName\": \"Acme Manufacturing\",\n  \"expiryDate\": \"2027-12-31T00:00:00Z\",\n  \"metadata\": {\n    \"weight_kg\": \"2.5\",\n    \"material\": \"steel\",\n    \"grade\": \"A\"\n  }\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/products",
+                "description": "Only Org1MSP may create products. Sets {{productId}}."
+              }
+            },
+            {
+              "name": "1.3 Create Shipment (receiverMsp = Org3MSP — FINAL destination)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const res = pm.response.json();",
+                      "if (res.id) {",
+                      "    pm.collectionVariables.set('shipmentId', res.id);",
+                      "    console.log('shipmentId:', res.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id\": \"SHIP-101\",\n  \"name\": \"Batch BATCH-2026-01 → Retail\",\n  \"description\": \"Full chain: Factory → Distributor → Retail Store\",\n  \"receiverMsp\": \"Org3MSP\",\n  \"receiverName\": \"City Retail Chain\",\n  \"origin\": \"Jakarta Factory, Indonesia\",\n  \"destination\": \"Retail Store Bandung, Indonesia\",\n  \"productIds\": [\"PROD-101\"]\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/shipments",
+                "description": "CRITICAL: receiverMsp=Org3MSP (Retailer = true final destination).\nDo NOT use Org2MSP here — that would mark shipment DELIVERED when Org2 accepts,\nblocking Org2 from transferring onward to Org3.\nSets {{shipmentId}}."
+              }
+            },
+            {
+              "name": "1.4 Dispatch Shipment",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+                "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/dispatch",
+                "description": "DRAFT → IN_TRANSIT. Only senderMSP (Org1) may dispatch."
+              }
+            },
+            {
+              "name": "1.5 Initiate Custody Transfer → Org2",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toMsp\": \"Org2MSP\",\n  \"toName\": \"Global Distributors Ltd\",\n  \"conditions\": \"Inspect for damage on receipt. Temperature must not exceed 25°C.\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/custody/initiate",
+                "description": "Creates PENDING custody record. Shipment stays IN_TRANSIT.\n\nNEXT: switch to Org2 environment, run Leg 2."
+              }
+            }
+          ]
+        },
+        {
+          "name": "── Leg 2: Org2 Actions (switch to Org2 env) ──",
+          "item": [
+            {
+              "name": "2.1 Login (Org2)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const res = pm.response.json();",
+                      "if (res.token) {",
+                      "    pm.collectionVariables.set('token', res.token);",
+                      "    pm.collectionVariables.set('org2Token', res.token);",
+                      "    pm.environment.set('token', res.token);",
+                      "    console.log('Org2 token saved');",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"asdqwe123\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/auth/login",
+                "description": "Saves to {{token}} and {{org2Token}} (collection var)."
+              }
+            },
+            {
+              "name": "2.2 Accept Custody from Org1 → stays IN_TRANSIT",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+                "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/custody/accept",
+                "description": "Org2MSP ≠ ship.ReceiverMSP (Org3MSP) → shipment stays IN_TRANSIT.\nProduct ownership transfers to Org2MSP.\nOrg2 is now senderMSP for the next leg."
+              }
+            },
+            {
+              "name": "2.3 Verify Shipment Still IN_TRANSIT",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+                "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}",
+                "description": "Confirm status=IN_TRANSIT and senderMsp=Org2MSP before next initiate."
+              }
+            },
+            {
+              "name": "2.4 Initiate Custody Transfer → Org3 (final leg)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toMsp\": \"Org3MSP\",\n  \"toName\": \"City Retail Chain\",\n  \"conditions\": \"Shelf-ready packaging required. Deliver before 09:00. Keep upright.\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/custody/initiate",
+                "description": "Org2 (now senderMSP) initiates transfer to Org3 (final destination).\nOrg3 accepting this will trigger DELIVERED.\n\nNEXT: switch to Org3 environment, run Leg 3."
+              }
+            }
+          ]
+        },
+        {
+          "name": "── Leg 3: Org3 Actions (switch to Org3 env) ──",
+          "item": [
+            {
+              "name": "3.1 Login (Org3)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const res = pm.response.json();",
+                      "if (res.token) {",
+                      "    pm.collectionVariables.set('token', res.token);",
+                      "    pm.collectionVariables.set('org3Token', res.token);",
+                      "    pm.environment.set('token', res.token);",
+                      "    console.log('Org3 token saved');",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"asdqwe123\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/auth/login",
+                "description": "Saves to {{token}} and {{org3Token}} (collection var)."
+              }
+            },
+            {
+              "name": "3.2 Accept Custody from Org2 → DELIVERED",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+                "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/custody/accept",
+                "description": "Org3MSP == ship.ReceiverMSP (Org3MSP) → shipment = DELIVERED.\nAll products: status=DELIVERED, currentOwnerMSP=Org3MSP."
+              }
+            },
+            {
+              "name": "3.3 Verify Shipment DELIVERED",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+                "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}",
+                "description": "Confirm status=DELIVERED."
+              }
+            },
+            {
+              "name": "3.4 View Full Custody Chain",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+                "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/custody",
+                "description": "Shows all custody records:\n  seq 0001: Org1MSP → Org2MSP (COMPLETED)\n  seq 0002: Org2MSP → Org3MSP (COMPLETED)"
+              }
+            },
+            {
+              "name": "3.5 Get Product Provenance",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+                "url": "{{baseUrl}}/api/v1/products/{{productId}}/provenance",
+                "description": "Full audit trail: product state + ledger history + custody chain + events."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "description": "Product lifecycle. Switch environment + run Login to act as any org.\nOnly Org1MSP (Manufacturer) may create products.",
+      "item": [
+        {
+          "name": "Get All Products",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products?pageSize=20&bookmark=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products"],
+              "query": [
+                { "key": "pageSize", "value": "20" },
+                { "key": "bookmark", "value": "" }
+              ]
+            },
+            "description": "Paginated. Use bookmark from response for next page."
+          }
+        },
+        {
+          "name": "Get Product by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}"
+          }
+        },
+        {
+          "name": "Create Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) pm.collectionVariables.set('productId', res.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"PROD-101\",\n  \"sku\": \"SKU-A101\",\n  \"name\": \"Industrial Widget Alpha\",\n  \"description\": \"Heavy-duty industrial widget\",\n  \"batchId\": \"BATCH-2026-01\",\n  \"manufacturerName\": \"Acme Manufacturing\",\n  \"expiryDate\": \"2027-12-31T00:00:00Z\",\n  \"metadata\": {\n    \"weight_kg\": \"2.5\",\n    \"material\": \"steel\",\n    \"grade\": \"A\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products",
+            "description": "Requires Org1 env + Org1 token. Sets {{productId}}."
+          }
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Industrial Widget Alpha v2\",\n  \"description\": \"Updated heavy-duty widget\",\n  \"expiryDate\": \"2028-06-30T00:00:00Z\",\n  \"metadata\": {\n    \"weight_kg\": \"2.5\",\n    \"material\": \"steel\",\n    \"grade\": \"AA\",\n    \"certified\": \"true\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}",
+            "description": "Only current owner MSP may update."
+          }
+        },
+        {
+          "name": "Get Product History",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/history"
+          }
+        },
+        {
+          "name": "Get Product Provenance",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/provenance",
+            "description": "Full audit: product + ledger history + custody chain + events."
+          }
+        },
+        {
+          "name": "Get Products by Batch",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/products/batch/{{batchId}}"
+          }
+        },
+        {
+          "name": "Get Products by Status (ACTIVE)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/products/status/ACTIVE",
+            "description": "Valid: ACTIVE, SHIPPED, DELIVERED, RECALLED, SCRAPPED"
+          }
+        },
+        {
+          "name": "Get Products by Status (SHIPPED)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/products/status/SHIPPED"
+          }
+        },
+        {
+          "name": "Get Products by Status (DELIVERED)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/products/status/DELIVERED"
+          }
+        },
+        {
+          "name": "Get Products by Status (RECALLED)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/products/status/RECALLED"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shipments",
+      "description": "Shipment management.\n\nIMPORTANT: receiverMsp must be the FINAL destination org.\n  Multi-hop Org1→Org2→Org3: set receiverMsp=Org3MSP\n  Direct Org1→Org2 only: set receiverMsp=Org2MSP",
+      "item": [
+        {
+          "name": "Get All Shipments",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/shipments?pageSize=20&bookmark=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shipments"],
+              "query": [
+                { "key": "pageSize", "value": "20" },
+                { "key": "bookmark", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Shipment by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}"
+          }
+        },
+        {
+          "name": "Create Shipment (Org1→Org2→Org3, multi-hop)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) pm.collectionVariables.set('shipmentId', res.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"SHIP-101\",\n  \"name\": \"Batch BATCH-2026-01 → Retail\",\n  \"description\": \"Full chain: Factory → Distributor → Retail Store\",\n  \"receiverMsp\": \"Org3MSP\",\n  \"receiverName\": \"City Retail Chain\",\n  \"origin\": \"Jakarta Factory, Indonesia\",\n  \"destination\": \"Retail Store Bandung, Indonesia\",\n  \"productIds\": [\"PROD-101\"]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/shipments",
+            "description": "receiverMsp=Org3MSP = final destination.\nOrg2 is intermediate — accepting at Org2 keeps status IN_TRANSIT.\nSets {{shipmentId}}."
+          }
+        },
+        {
+          "name": "Create Shipment (Org1→Org2, direct)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) pm.collectionVariables.set('shipmentId', res.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"SHIP-102\",\n  \"name\": \"Direct Manufacturer → Distributor\",\n  \"description\": \"Direct 2-hop delivery, no further transfer to Org3\",\n  \"receiverMsp\": \"Org2MSP\",\n  \"receiverName\": \"Global Distributors Ltd\",\n  \"origin\": \"Jakarta Factory, Indonesia\",\n  \"destination\": \"Surabaya Warehouse, Indonesia\",\n  \"productIds\": [\"PROD-101\"]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/shipments",
+            "description": "Use receiverMsp=Org2MSP ONLY when Org2 is the true final destination.\nAccepting at Org2 immediately marks shipment DELIVERED."
+          }
+        },
+        {
+          "name": "Dispatch Shipment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/dispatch",
+            "description": "Only senderMSP may dispatch. DRAFT → IN_TRANSIT."
+          }
+        },
+        {
+          "name": "Get Shipment History",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/history"
+          }
+        },
+        {
+          "name": "Get Shipments by Status (DRAFT)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/shipments/status/DRAFT",
+            "description": "Valid: DRAFT, IN_TRANSIT, DELIVERED, RECALLED, CANCELLED"
+          }
+        },
+        {
+          "name": "Get Shipments by Status (IN_TRANSIT)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/shipments/status/IN_TRANSIT"
+          }
+        },
+        {
+          "name": "Get Shipments by Status (DELIVERED)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/shipments/status/DELIVERED"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Custody Transfers",
+      "description": "2-step handoff: Initiate (current senderMSP) → Accept/Reject (intended receiver).\n\nShipment becomes DELIVERED only when acceptor's MSP == ship.ReceiverMSP.\nFor 3-org flow, ReceiverMSP must be Org3MSP at shipment creation.\n\nSwitch environment + Login before each initiate/accept call.",
+      "item": [
+        {
+          "name": "Get Custody Chain",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/custody",
+            "description": "All custody records in sequence order."
+          }
+        },
+        {
+          "name": "Initiate Custody Transfer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toMsp\": \"Org2MSP\",\n  \"toName\": \"Global Distributors Ltd\",\n  \"conditions\": \"Inspect for damage on receipt. Temperature must not exceed 25°C.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/custody/initiate",
+            "description": "Run as current senderMSP. Edit toMsp/toName for the target org.\nShipment must be IN_TRANSIT."
+          }
+        },
+        {
+          "name": "Accept Custody Transfer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/custody/accept",
+            "description": "Run as the intended receiver org (switch env + login first).\nIf receiver MSP == ship.ReceiverMSP → DELIVERED.\nIf receiver MSP != ship.ReceiverMSP → stays IN_TRANSIT (intermediate hop)."
+          }
+        },
+        {
+          "name": "Reject Custody Transfer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/shipments/{{shipmentId}}/custody/reject",
+            "description": "Run as the intended receiver org. Custody record = REJECTED."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Events",
+      "description": "Immutable supply chain event log. Any org may log events. Switch env to log as different org.",
+      "item": [
+        {
+          "name": "Log Event — Checkpoint",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) pm.collectionVariables.set('eventId', res.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"EVT-001\",\n  \"targetId\": \"{{shipmentId}}\",\n  \"targetType\": \"SHIPMENT\",\n  \"eventType\": \"CHECKPOINT\",\n  \"description\": \"Passed customs inspection at Tanjung Priok port\",\n  \"location\": \"Tanjung Priok Port, Jakarta\",\n  \"occurredAt\": \"2026-05-08T10:00:00Z\",\n  \"data\": {\n    \"inspector\": \"BC-4421\",\n    \"seal_number\": \"SEAL-88912\",\n    \"cleared\": \"true\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/events",
+            "description": "Sets {{eventId}}. targetType: PRODUCT | SHIPMENT."
+          }
+        },
+        {
+          "name": "Log Event — Temperature Reading",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"EVT-002\",\n  \"targetId\": \"{{productId}}\",\n  \"targetType\": \"PRODUCT\",\n  \"eventType\": \"TEMPERATURE\",\n  \"description\": \"Cold chain temperature check at distributor warehouse\",\n  \"location\": \"Surabaya Cold Storage\",\n  \"occurredAt\": \"2026-05-08T14:30:00Z\",\n  \"data\": {\n    \"temp_celsius\": \"4.2\",\n    \"humidity_pct\": \"68\",\n    \"sensor_id\": \"SENSOR-44\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/events"
+          }
+        },
+        {
+          "name": "Log Event — Quality Inspection",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"EVT-003\",\n  \"targetId\": \"{{productId}}\",\n  \"targetType\": \"PRODUCT\",\n  \"eventType\": \"INSPECTION\",\n  \"description\": \"Incoming quality control inspection passed\",\n  \"location\": \"Distributor QC Lab, Surabaya\",\n  \"occurredAt\": \"2026-05-08T16:00:00Z\",\n  \"data\": {\n    \"result\": \"PASS\",\n    \"inspector_id\": \"QC-221\",\n    \"batch_sample_size\": \"50\",\n    \"defect_rate_pct\": \"0.2\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/events",
+            "description": "Switch to Org2 env + login to log this as Distributor."
+          }
+        },
+        {
+          "name": "Get Events for Target",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/events/{{shipmentId}}",
+            "description": "Replace {{shipmentId}} with any product or shipment ID."
+          }
+        },
+        {
+          "name": "Get Events for Product",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/events/{{productId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Recalls",
+      "description": "Issue recalls by PRODUCT, SHIPMENT, or BATCH. Marks all affected products RECALLED.",
+      "item": [
+        {
+          "name": "Issue Recall — By Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) pm.collectionVariables.set('recallId', res.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"RCL-001\",\n  \"scope\": \"PRODUCT\",\n  \"targetIds\": [\"{{productId}}\"],\n  \"reason\": \"Contamination detected in quality audit\",\n  \"severity\": \"HIGH\",\n  \"issuedByName\": \"Acme Manufacturing QA\",\n  \"instructionsUrl\": \"https://acme.example.com/recalls/RCL-001\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/recalls",
+            "description": "Sets {{recallId}}. scope: PRODUCT | SHIPMENT | BATCH"
+          }
+        },
+        {
+          "name": "Issue Recall — By Batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"RCL-002\",\n  \"scope\": \"BATCH\",\n  \"targetIds\": [\"{{batchId}}\"],\n  \"reason\": \"Failed regulatory compliance — entire batch affected\",\n  \"severity\": \"CRITICAL\",\n  \"issuedByName\": \"National Safety Authority\",\n  \"instructionsUrl\": \"https://nsa.example.com/recall/RCL-002\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/recalls",
+            "description": "Marks every product with batchId={{batchId}} as RECALLED."
+          }
+        },
+        {
+          "name": "Issue Recall — By Shipment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"RCL-003\",\n  \"scope\": \"SHIPMENT\",\n  \"targetIds\": [\"{{shipmentId}}\"],\n  \"reason\": \"Cold chain breach — products may be compromised\",\n  \"severity\": \"MEDIUM\",\n  \"issuedByName\": \"Distributor QA Team\",\n  \"instructionsUrl\": \"\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/recalls"
+          }
+        },
+        {
+          "name": "Get Recall by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/recalls/{{recallId}}"
+          }
+        },
+        {
+          "name": "Get All Recalled Products",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/recalls/products",
+            "description": "All products currently in RECALLED status."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Network",
+      "description": "Infrastructure info. Switch env to inspect each org's view.",
+      "item": [
+        {
+          "name": "Get Channels",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/channels"
+          }
+        },
+        {
+          "name": "Get Channel Info",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/channels/mychannel"
+          }
+        },
+        {
+          "name": "Get Chaincodes",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/chaincodes"
+          }
+        },
+        {
+          "name": "Get Chaincode Info",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/chaincodes/basic"
+          }
+        },
+        {
+          "name": "Get Peers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/network/peers"
+          }
+        },
+        {
+          "name": "Get Organizations",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/network/organizations"
+          }
+        },
+        {
+          "name": "Get Connection Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/network/connection-profile"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Identities (CA)",
+      "description": "Fabric CA identity management. Switch env to manage each org's identities.",
+      "item": [
+        {
+          "name": "List Identities",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/identities"
+          }
+        },
+        {
+          "name": "Get Identity",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/identities/user1"
+          }
+        },
+        {
+          "name": "Register Identity",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"app-user\",\n  \"type\": \"client\",\n  \"affiliation\": \"org1\",\n  \"secret\": \"apppw\",\n  \"maxEnrollments\": -1\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/identities/register"
+          }
+        },
+        {
+          "name": "Enroll Identity",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"app-user\",\n  \"secret\": \"apppw\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/identities/enroll"
+          }
+        },
+        {
+          "name": "Delete Identity",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/api/v1/identities/app-user"
+          }
+        }
+      ]
+    }
+  ]
+}

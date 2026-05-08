@@ -239,6 +239,9 @@ if pgrep -f "fabric-client" > /dev/null; then
 fi
 
 # Start the application in background
+# GODEBUG=netdns=cgo forces Go to use the system CGO DNS resolver (respects /etc/hosts)
+# instead of the pure Go resolver which may bypass /etc/hosts for service-discovered peers.
+export GODEBUG=netdns=cgo
 nohup ./fabric-client > /tmp/fabric-client.log 2>&1 &
 CLIENT_PID=$!
 

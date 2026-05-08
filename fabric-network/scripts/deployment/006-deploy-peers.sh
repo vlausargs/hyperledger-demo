@@ -82,6 +82,7 @@ create_peer_compose() {
     local peer_metrics_port=$9
     local peer_profile_port=${10}
     local compose_file=${11}
+    local external_host=${12}
 
     cat > "$compose_file" << EOF
 version: '3.8'
@@ -124,7 +125,7 @@ services:
       - CORE_PEER_CHAINCODEADDRESS=${peer_name}.${org_domain}:${peer_ssl_port}
       - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:${peer_ssl_port}
       - CORE_PEER_GOSSIP_BOOTSTRAP=${peer_name}.${org_domain}:${peer_port}
-      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=${peer_name}.${org_domain}:${peer_port}
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=${external_host}:${peer_port}
       - CORE_PEER_LOCALMSPID=${org_name}
       - CORE_PEER_TLS_ENABLED=\${TLS_ENABLED}
       - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
@@ -240,6 +241,8 @@ deploy_peer() {
 
     # Create peer docker-compose file
     local compose_file="${PROJECT_ROOT}/docker-compose/${org_dir}/peer.yml"
+    local external_host
+    external_host=$(get_external_host "peer" "$org_domain")
     rm -f "$compose_file"
     create_peer_compose \
         "$org_domain" \
@@ -252,7 +255,8 @@ deploy_peer() {
         "$couchdb_pass" \
         "$peer_metrics_port" \
         "$peer_profile_port" \
-        "$compose_file"
+        "$compose_file" \
+        "$external_host"
 
     # Deploy peer
     print_status $YELLOW "Deploying ${peer_name}.${org_domain} service..."
