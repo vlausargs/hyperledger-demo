@@ -1,43 +1,47 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import { Label } from '$lib/components/ui/label/index.js';
+  import * as Card from '$lib/components/ui/card/index.js';
 
   let error = $state('');
 </script>
 
-<div class="min-h-screen flex items-center justify-center bg-gray-50">
-  <div class="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow">
-    <h2 class="text-2xl font-bold text-center text-gray-900">HLF Supply Chain</h2>
-    <p class="text-center text-gray-600">Sign in to your account</p>
-
-    {#if error}
-      <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">{error}</div>
-    {/if}
-
-    <form method="POST" use:enhance={() => {
-      return async ({ result }) => {
-        if (result.type === 'failure') {
-          error = result.data?.error || 'Login failed';
-        } else if (result.type === 'redirect') {
-          window.location.href = result.location;
-        }
-      };
-    }}>
-      <div class="space-y-4">
-        <div>
-          <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
-          <input id="username" name="username" type="text" required
-            class="mt-1 block w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
+<div class="min-h-screen flex items-center justify-center bg-muted/40">
+  <Card.Card class="w-full max-w-md">
+    <Card.Header class="space-y-1 text-center">
+      <Card.Title class="text-2xl font-bold">HLF Supply Chain</Card.Title>
+      <Card.Description>Sign in to your account</Card.Description>
+    </Card.Header>
+    <Card.Content>
+      {#if error}
+        <div class="mb-4 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
+          {error}
         </div>
-        <div>
-          <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-          <input id="password" name="password" type="password" required
-            class="mt-1 block w-full rounded border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
+      {/if}
+
+      <form method="POST" use:enhance={() => {
+        return async ({ result }) => {
+          if (result.type === 'failure') {
+            error = result.data?.error || 'Login failed';
+          } else if (result.type === 'redirect') {
+            window.location.href = result.location;
+          }
+        };
+      }}>
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <Label for="username">Username</Label>
+            <Input id="username" name="username" type="text" required placeholder="Enter your username" />
+          </div>
+          <div class="space-y-2">
+            <Label for="password">Password</Label>
+            <Input id="password" name="password" type="password" required placeholder="Enter your password" />
+          </div>
+          <Button type="submit" class="w-full">Sign in</Button>
         </div>
-        <button type="submit"
-          class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-          Sign in
-        </button>
-      </div>
-    </form>
-  </div>
+      </form>
+    </Card.Content>
+  </Card.Card>
 </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { Button } from '$lib/components/ui/button/index.js';
 
   let { data, children } = $props();
 
@@ -38,24 +39,30 @@
   });
 </script>
 
-<div class="flex h-screen bg-gray-100">
-  <aside class="w-64 bg-white shadow-md flex flex-col">
+<div class="flex h-screen bg-muted/40">
+  <aside class="w-64 bg-card shadow-md flex flex-col border-r">
     <div class="p-4 border-b">
-      <h1 class="text-lg font-bold text-gray-800">Supply Chain</h1>
-      <p class="text-sm text-gray-500">{orgLabel[data.user.org] || data.user.org}</p>
-      <p class="text-xs text-gray-400">{data.user.username}</p>
+      <h1 class="text-lg font-bold text-foreground">Supply Chain</h1>
+      <p class="text-sm text-muted-foreground">{orgLabel[data.user.org] || data.user.org}</p>
+      <p class="text-xs text-muted-foreground/70">{data.user.username}</p>
     </div>
-    <nav class="flex-1 p-4 space-y-1">
+    <nav class="flex-1 p-3 space-y-1">
       {#each navItems as item}
-        <a href={item.href}
-          class="block px-3 py-2 rounded text-sm {$page.url.pathname.startsWith(item.href) ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}">
-          {item.label}
+        <a href={item.href} class="block w-full">
+          <Button
+            variant={$page.url.pathname.startsWith(item.href) ? 'secondary' : 'ghost'}
+            class="w-full justify-start text-sm"
+          >
+            {item.label}
+          </Button>
         </a>
       {/each}
     </nav>
     <div class="p-4 border-t">
       <form method="POST" action="/logout">
-        <button type="submit" class="text-sm text-gray-500 hover:text-gray-700">Sign out</button>
+        <Button type="submit" variant="ghost" class="w-full justify-start text-sm text-muted-foreground">
+          Sign out
+        </Button>
       </form>
     </div>
   </aside>
