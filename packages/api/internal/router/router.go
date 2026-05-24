@@ -11,6 +11,7 @@ import (
 func Setup(r *gin.Engine, gw handler.FabricGateway, caClient *fabric.CAClient, corsOrigin, walletPath, jwtSecret, mspID string) {
 	r.Use(gin.Recovery())
 	r.Use(middleware.SecurityHeaders())
+	r.Use(middleware.RateLimit(100, 200))
 	r.Use(middleware.CORS(corsOrigin))
 	r.Use(middleware.CorrelationID())
 	r.Use(middleware.RequestLogger())
