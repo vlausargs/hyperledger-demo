@@ -1,4 +1,4 @@
-.PHONY: build-chaincode build-api test-chaincode test-api test lint clean
+.PHONY: build-chaincode build-api test-chaincode test-api test lint clean deploy-monitoring stop-monitoring
 
 build-chaincode:
 	cd packages/chaincode && go build -o ../../bin/chaincode .
@@ -26,3 +26,9 @@ lint: lint-chaincode lint-api
 
 clean:
 	rm -f bin/chaincode bin/server
+
+deploy-monitoring:
+	docker compose -f infra/docker/compose.monitoring.yml up -d
+
+stop-monitoring:
+	docker compose -f infra/docker/compose.monitoring.yml down
