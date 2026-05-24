@@ -20,6 +20,10 @@ func GetChannels(gw FabricGateway) gin.HandlerFunc {
 func GetChannelInfo(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		channelID := c.Param("channelId")
+		if err := validateID("channel", channelID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		if channelID != gw.GetChannel() {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found"})
 			return
@@ -50,6 +54,10 @@ func GetChaincodes(gw FabricGateway) gin.HandlerFunc {
 func GetChaincodeInfo(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		chaincodeID := c.Param("chaincodeId")
+		if err := validateID("chaincode", chaincodeID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		if chaincodeID != gw.GetChaincode() {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Chaincode not found"})
 			return
@@ -148,6 +156,11 @@ func GetTransactions(gw FabricGateway) gin.HandlerFunc {
 
 func GetTransaction(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		txID := c.Param("txId")
+		if err := validateID("transaction", txID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "transaction lookup not supported by Fabric Gateway SDK"})
 	}
 }

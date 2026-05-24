@@ -36,6 +36,10 @@ func LogEvent(gw FabricGateway) gin.HandlerFunc {
 func GetEvents(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		targetID := c.Param("targetId")
+		if err := validateID("target", targetID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "GetEvents", targetID)
 		if err != nil {

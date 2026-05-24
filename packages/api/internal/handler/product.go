@@ -25,6 +25,10 @@ func GetAllProducts(gw FabricGateway) gin.HandlerFunc {
 func GetProduct(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("product", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "ReadProduct", id)
 		if err != nil {
@@ -73,6 +77,10 @@ func CreateProduct(gw FabricGateway) gin.HandlerFunc {
 func UpdateProduct(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("product", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		var req UpdateProductRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -102,6 +110,10 @@ func UpdateProduct(gw FabricGateway) gin.HandlerFunc {
 func GetProductHistory(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("product", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "GetProductHistory", id)
 		if err != nil {
@@ -116,6 +128,10 @@ func GetProductHistory(gw FabricGateway) gin.HandlerFunc {
 func GetProductProvenance(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("product", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "GetProvenance", id)
 		if err != nil {
@@ -134,6 +150,10 @@ func GetProductProvenance(gw FabricGateway) gin.HandlerFunc {
 func GetProductsByBatch(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		batchID := c.Param("batchId")
+		if err := validateID("batch", batchID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "GetProductsByBatch", batchID)
 		if err != nil {
@@ -148,6 +168,10 @@ func GetProductsByBatch(gw FabricGateway) gin.HandlerFunc {
 func GetProductsByStatus(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		status := c.Param("status")
+		if status == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "GetProductsByStatus", status)
 		if err != nil {

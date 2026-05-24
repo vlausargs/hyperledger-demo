@@ -25,6 +25,10 @@ func GetAllShipments(gw FabricGateway) gin.HandlerFunc {
 func GetShipment(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("shipment", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "ReadShipment", id)
 		if err != nil {
@@ -73,6 +77,10 @@ func CreateShipment(gw FabricGateway) gin.HandlerFunc {
 func DispatchShipment(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("shipment", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		_, err := gw.SubmitTransaction("DispatchShipment", id)
 		if err != nil {
@@ -91,6 +99,10 @@ func DispatchShipment(gw FabricGateway) gin.HandlerFunc {
 func GetShipmentHistory(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("shipment", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "GetShipmentHistory", id)
 		if err != nil {
@@ -105,6 +117,10 @@ func GetShipmentHistory(gw FabricGateway) gin.HandlerFunc {
 func GetShipmentsByStatus(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		status := c.Param("status")
+		if status == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "GetShipmentsByStatus", status)
 		if err != nil {
@@ -119,6 +135,10 @@ func GetShipmentsByStatus(gw FabricGateway) gin.HandlerFunc {
 func GetCustodyChain(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("shipment", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "GetCustodyChain", id)
 		if err != nil {
@@ -133,6 +153,10 @@ func GetCustodyChain(gw FabricGateway) gin.HandlerFunc {
 func InitiateCustodyTransfer(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("shipment", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		var req InitiateCustodyRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -152,6 +176,10 @@ func InitiateCustodyTransfer(gw FabricGateway) gin.HandlerFunc {
 func AcceptCustodyTransfer(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("shipment", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		_, err := gw.SubmitTransaction("AcceptCustodyTransfer", id)
 		if err != nil {
@@ -166,6 +194,10 @@ func AcceptCustodyTransfer(gw FabricGateway) gin.HandlerFunc {
 func RejectCustodyTransfer(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("shipment", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		_, err := gw.SubmitTransaction("RejectCustodyTransfer", id)
 		if err != nil {

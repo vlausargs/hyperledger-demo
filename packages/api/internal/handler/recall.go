@@ -36,6 +36,10 @@ func IssueRecall(gw FabricGateway) gin.HandlerFunc {
 func ReadRecall(gw FabricGateway) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if err := validateID("recall", id); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		cid, _ := c.Get("correlationID")
 		result, err := evalJSON(gw, "ReadRecall", id)
 		if err != nil {
