@@ -1,4 +1,4 @@
-.PHONY: build-chaincode build-api test-chaincode test-api test lint clean deploy-monitoring stop-monitoring
+.PHONY: build-chaincode build-api test-chaincode test-api test lint clean deploy-monitoring stop-monitoring deploy-api deploy-web deploy-proxy deploy-all stop-api stop-web stop-proxy stop-all
 
 build-chaincode:
 	cd packages/chaincode && go build -o ../../bin/chaincode .
@@ -32,3 +32,25 @@ deploy-monitoring:
 
 stop-monitoring:
 	docker compose -f infra/docker/compose.monitoring.yml down
+
+deploy-api:
+	docker compose -f infra/docker/compose.api.yml up -d --build
+
+deploy-web:
+	docker compose -f infra/docker/compose.web.yml up -d --build
+
+deploy-proxy:
+	docker compose -f infra/docker/compose.proxy.yml up -d
+
+deploy-all: deploy-api deploy-web deploy-proxy deploy-monitoring
+
+stop-api:
+	docker compose -f infra/docker/compose.api.yml down
+
+stop-web:
+	docker compose -f infra/docker/compose.web.yml down
+
+stop-proxy:
+	docker compose -f infra/docker/compose.proxy.yml down
+
+stop-all: stop-api stop-web stop-proxy stop-monitoring
