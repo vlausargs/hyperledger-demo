@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  chaincode:
+    name: Chaincode
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Lint
+        working-directory: packages/chaincode
+        run: go vet ./...
+      - name: Test
+        working-directory: packages/chaincode
+        run: go test ./... -race -cover -coverprofile=coverage.out
+      - name: Check coverage
+        working-directory: packages/chaincode
+        run: go tool cover -func=coverage.out
+
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Lint
+        working-directory: packages/api
+        run: go vet ./...
+      - name: Test
+        working-directory: packages/api
+        run: go test ./... -race -cover -coverprofile=coverage.out
+      - name: Check coverage
+        working-directory: packages/api
+        run: go tool cover -func=coverage.out
+      - name: Build
+        working-directory: packages/api
+        run: go build ./cmd/server
+
+  shellcheck:
+    name: Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+      - name: Check scripts
+        run: find fabric-network/scripts -name '*.sh' -exec shellcheck -e SC1091 -e SC2034 {} +
