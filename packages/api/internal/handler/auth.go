@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,15 +11,14 @@ import (
 const (
 	hardcodedUser = "admin"
 	hardcodedPass = "asdqwe123"
-	tokenTTL      = 24 * time.Hour
+	tokenTTL      = 15 * time.Minute
 )
 
 // Login issues a JWT token for valid credentials.
-func Login() gin.HandlerFunc {
+func Login(jwtSecret, mspID string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		secret := os.Getenv("JWT_SECRET")
-		if secret == "" {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "server misconfigured: JWT_SECRET not set"})
+		if jwtSecret == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server misconfigured: JWT secret not set"})
 			return
 		}
 
@@ -36,12 +34,14 @@ func Login() gin.HandlerFunc {
 		}
 
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"sub": req.Username,
-			"exp": time.Now().Add(tokenTTL).Unix(),
-			"iat": time.Now().Unix(),
+			"sub":  req.Username,
+			"org":  mspID,
+			"role": "admin",
+			"exp":  time.Now().Add(tokenTTL).Unix(),
+			"iat":  time.Now().Unix(),
 		})
 
-		signed, err := token.SignedString([]byte(secret))
+		signed, err := token.SignedString([]byte(jwtSecret))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 			return

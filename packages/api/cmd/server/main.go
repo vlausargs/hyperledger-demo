@@ -64,7 +64,7 @@ func main() {
 
 	// Create Gin router and register all routes
 	r := gin.New()
-	router.Setup(r, fabricGateway, caClient, cfg.CORSAllowedOrigin, cfg.WalletPath)
+	router.Setup(r, fabricGateway, caClient, cfg.CORSAllowedOrigin, cfg.WalletPath, cfg.JWTSecret, cfg.MSPID)
 
 	// Create HTTP server
 	server := &http.Server{

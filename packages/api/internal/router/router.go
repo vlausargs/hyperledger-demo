@@ -8,7 +8,7 @@ import (
 )
 
 // Setup registers all middleware and routes on the given engine.
-func Setup(r *gin.Engine, gw handler.FabricGateway, caClient *fabric.CAClient, corsOrigin, walletPath string) {
+func Setup(r *gin.Engine, gw handler.FabricGateway, caClient *fabric.CAClient, corsOrigin, walletPath, jwtSecret, mspID string) {
 	r.Use(gin.Recovery())
 	r.Use(middleware.CORS(corsOrigin))
 	r.Use(middleware.CorrelationID())
@@ -18,11 +18,11 @@ func Setup(r *gin.Engine, gw handler.FabricGateway, caClient *fabric.CAClient, c
 	r.GET("/health", handler.HealthCheck(gw))
 
 	// Auth endpoints (no JWT required)
-	r.POST("/api/v1/auth/login", handler.Login())
+	r.POST("/api/v1/auth/login", handler.Login(jwtSecret, mspID))
 
 	// API v1 routes — all protected by JWT
 	v1 := r.Group("/api/v1")
-	v1.Use(middleware.JWT())
+	v1.Use(middleware.JWT(jwtSecret))
 	{
 		// Product endpoints
 		products := v1.Group("/products")
