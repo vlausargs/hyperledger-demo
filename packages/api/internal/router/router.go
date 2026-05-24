@@ -25,6 +25,7 @@ func Setup(r *gin.Engine, gw handler.FabricGateway, caClient *fabric.CAClient, c
 	// API v1 routes — all protected by JWT
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.JWT(jwtSecret))
+	v1.Use(middleware.AuditLog())
 	{
 		// Product endpoints
 		products := v1.Group("/products")
