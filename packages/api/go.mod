@@ -8,6 +8,7 @@ require (
 	github.com/hyperledger/fabric-ca v1.5.19
 	github.com/hyperledger/fabric-gateway v1.11.0
 	github.com/hyperledger/fabric-protos-go-apiv2 v0.3.7
+	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.81.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -77,7 +78,6 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect

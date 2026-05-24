@@ -5,16 +5,21 @@ import (
 	"github.com/myindo/hlf-supply-chain/api/internal/fabric"
 	"github.com/myindo/hlf-supply-chain/api/internal/handler"
 	"github.com/myindo/hlf-supply-chain/api/internal/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Setup registers all middleware and routes on the given engine.
 func Setup(r *gin.Engine, gw handler.FabricGateway, caClient *fabric.CAClient, corsOrigin, walletPath, jwtSecret, mspID string) {
 	r.Use(gin.Recovery())
+	r.Use(middleware.Metrics())
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.RateLimit(100, 200))
 	r.Use(middleware.CORS(corsOrigin))
 	r.Use(middleware.CorrelationID())
 	r.Use(middleware.RequestLogger())
+
+	// Metrics endpoint (no auth required)
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Health check endpoint (no auth required)
 	r.GET("/health", handler.HealthCheck(gw))
