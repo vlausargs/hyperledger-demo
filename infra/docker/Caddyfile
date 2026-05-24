@@ -1,0 +1,15 @@
+{
+    auto_https off
+}
+
+:80 {
+    handle /api/* {
+        reverse_proxy localhost:8080
+    }
+    handle /metrics {
+        reverse_proxy localhost:8080
+    }
+    handle {
+        reverse_proxy localhost:3000
+    }
+}

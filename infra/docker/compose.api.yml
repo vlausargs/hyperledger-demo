@@ -1,0 +1,75 @@
+services:
+  api-org1:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfiles/api.Dockerfile
+    network_mode: host
+    environment:
+      - SERVER_PORT=8080
+      - CHANNEL_ID=${CHANNEL_NAME:-mychannel}
+      - CHAINCODE_ID=${CHAINCODE_NAME:-basic}
+      - MSP_ID=Org1MSP
+      - JWT_SECRET=${JWT_SECRET}
+      - WALLET_PATH=/crypto/wallet
+      - TLS_CERT_PATH=/crypto
+      - CONNECTION_PROFILE=/crypto/connection-profile.yaml
+      - GIN_MODE=release
+      - CORS_ALLOWED_ORIGIN=${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+    volumes:
+      - ../../fabric-network/client/crypto-Org1MSP:/crypto:ro
+      - ../../fabric-network/client/wallet-Org1MSP:/crypto/wallet
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  api-org2:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfiles/api.Dockerfile
+    network_mode: host
+    environment:
+      - SERVER_PORT=8081
+      - CHANNEL_ID=${CHANNEL_NAME:-mychannel}
+      - CHAINCODE_ID=${CHAINCODE_NAME:-basic}
+      - MSP_ID=Org2MSP
+      - JWT_SECRET=${JWT_SECRET}
+      - WALLET_PATH=/crypto/wallet
+      - TLS_CERT_PATH=/crypto
+      - CONNECTION_PROFILE=/crypto/connection-profile.yaml
+      - GIN_MODE=release
+      - CORS_ALLOWED_ORIGIN=${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+    volumes:
+      - ../../fabric-network/client/crypto-Org2MSP:/crypto:ro
+      - ../../fabric-network/client/wallet-Org2MSP:/crypto/wallet
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  api-org3:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfiles/api.Dockerfile
+    network_mode: host
+    environment:
+      - SERVER_PORT=8082
+      - CHANNEL_ID=${CHANNEL_NAME:-mychannel}
+      - CHAINCODE_ID=${CHAINCODE_NAME:-basic}
+      - MSP_ID=Org3MSP
+      - JWT_SECRET=${JWT_SECRET}
+      - WALLET_PATH=/crypto/wallet
+      - TLS_CERT_PATH=/crypto
+      - CONNECTION_PROFILE=/crypto/connection-profile.yaml
+      - GIN_MODE=release
+      - CORS_ALLOWED_ORIGIN=${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+    volumes:
+      - ../../fabric-network/client/crypto-Org3MSP:/crypto:ro
+      - ../../fabric-network/client/wallet-Org3MSP:/crypto/wallet
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m

@@ -1,0 +1,15 @@
+services:
+  web:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfiles/web.Dockerfile
+    network_mode: host
+    environment:
+      - PORT=3000
+      - API_URL=http://localhost:8080
+      - NODE_ENV=production
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
