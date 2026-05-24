@@ -16,6 +16,7 @@ func main() {
 		&contracts.EventContract{},
 		&contracts.RecallContract{},
 		&contracts.SaleContract{},
+		&contracts.InventoryContract{},
 	)
 	if err != nil {
 		log.Panicf("Error creating supply chain chaincode: %v", err)

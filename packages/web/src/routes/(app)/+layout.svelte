@@ -34,6 +34,7 @@
 
     items.push({ href: '/trace', label: 'Trace' });
     items.push({ href: '/recalls', label: 'Recalls' });
+    items.push({ href: '/admin', label: 'Admin' });
 
     return items;
   });
