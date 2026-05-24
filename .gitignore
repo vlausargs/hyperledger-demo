@@ -10,3 +10,4 @@
 *.tar.gz
 .env
 fabric-network/organizations/
+/bin/
