@@ -1,148 +1,11 @@
 package contracts
 
 import (
-	"crypto/x509"
 	"encoding/json"
 	"testing"
 
 	"github.com/myindo/hlf-supply-chain/chaincode/models"
-	"github.com/hyperledger/fabric-chaincode-go/v2/pkg/cid"
-	"github.com/hyperledger/fabric-chaincode-go/v2/shim"
-	"github.com/hyperledger/fabric-protos-go-apiv2/ledger/queryresult"
-	"github.com/hyperledger/fabric-protos-go-apiv2/peer"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-// ---------------------------------------------------------------------------
-// Minimal in-memory stub (mirrors ledger/store_test.go mock)
-// ---------------------------------------------------------------------------
-
-type mockStub struct {
-	state map[string][]byte
-}
-
-func newMockStub() *mockStub {
-	return &mockStub{state: make(map[string][]byte)}
-}
-
-func (m *mockStub) GetState(key string) ([]byte, error)     { return m.state[key], nil }
-func (m *mockStub) PutState(key string, value []byte) error { m.state[key] = value; return nil }
-func (m *mockStub) DelState(key string) error               { delete(m.state, key); return nil }
-
-func (m *mockStub) GetArgs() [][]byte                          { return nil }
-func (m *mockStub) GetStringArgs() []string                     { return nil }
-func (m *mockStub) GetFunctionAndParameters() (string, []string) { return "", nil }
-func (m *mockStub) GetArgsSlice() ([]byte, error)               { return nil, nil }
-func (m *mockStub) GetTxID() string                             { return "mock-tx-id" }
-func (m *mockStub) GetChannelID() string                        { return "mock-channel" }
-func (m *mockStub) InvokeChaincode(name string, args [][]byte, channel string) *peer.Response {
-	return nil
-}
-func (m *mockStub) SetStateValidationParameter(key string, ep []byte) error      { return nil }
-func (m *mockStub) GetStateValidationParameter(key string) ([]byte, error)       { return nil, nil }
-func (m *mockStub) GetStateByRange(startKey, endKey string) (shim.StateQueryIteratorInterface, error) {
-	return &emptyStateIter{}, nil
-}
-func (m *mockStub) GetStateByRangeWithPagination(startKey, endKey string, pageSize int32, bookmark string) (shim.StateQueryIteratorInterface, *peer.QueryResponseMetadata, error) {
-	return &emptyStateIter{}, &peer.QueryResponseMetadata{Bookmark: ""}, nil
-}
-func (m *mockStub) GetStateByPartialCompositeKey(objectType string, keys []string) (shim.StateQueryIteratorInterface, error) {
-	return &emptyStateIter{}, nil
-}
-func (m *mockStub) GetStateByPartialCompositeKeyWithPagination(objectType string, keys []string, pageSize int32, bookmark string) (shim.StateQueryIteratorInterface, *peer.QueryResponseMetadata, error) {
-	return &emptyStateIter{}, &peer.QueryResponseMetadata{Bookmark: ""}, nil
-}
-func (m *mockStub) CreateCompositeKey(objectType string, attributes []string) (string, error) {
-	return objectType, nil
-}
-func (m *mockStub) SplitCompositeKey(compositeKey string) (string, []string, error) {
-	return compositeKey, nil, nil
-}
-func (m *mockStub) GetQueryResult(query string) (shim.StateQueryIteratorInterface, error) {
-	return &emptyStateIter{}, nil
-}
-func (m *mockStub) GetQueryResultWithPagination(query string, pageSize int32, bookmark string) (shim.StateQueryIteratorInterface, *peer.QueryResponseMetadata, error) {
-	return &emptyStateIter{}, &peer.QueryResponseMetadata{Bookmark: ""}, nil
-}
-func (m *mockStub) GetHistoryForKey(key string) (shim.HistoryQueryIteratorInterface, error) {
-	return &emptyHistoryIter{}, nil
-}
-func (m *mockStub) GetPrivateData(collection, key string) ([]byte, error)             { return nil, nil }
-func (m *mockStub) GetPrivateDataHash(collection, key string) ([]byte, error)         { return nil, nil }
-func (m *mockStub) PutPrivateData(collection, key string, value []byte) error         { return nil }
-func (m *mockStub) DelPrivateData(collection, key string) error                       { return nil }
-func (m *mockStub) PurgePrivateData(collection, key string) error                     { return nil }
-func (m *mockStub) SetPrivateDataValidationParameter(collection, key string, ep []byte) error {
-	return nil
-}
-func (m *mockStub) GetPrivateDataValidationParameter(collection, key string) ([]byte, error) {
-	return nil, nil
-}
-func (m *mockStub) GetPrivateDataByRange(collection, startKey, endKey string) (shim.StateQueryIteratorInterface, error) {
-	return &emptyStateIter{}, nil
-}
-func (m *mockStub) GetPrivateDataByPartialCompositeKey(collection, objectType string, keys []string) (shim.StateQueryIteratorInterface, error) {
-	return &emptyStateIter{}, nil
-}
-func (m *mockStub) GetPrivateDataQueryResult(collection, query string) (shim.StateQueryIteratorInterface, error) {
-	return &emptyStateIter{}, nil
-}
-func (m *mockStub) GetCreator() ([]byte, error)                       { return nil, nil }
-func (m *mockStub) GetTransient() (map[string][]byte, error)          { return nil, nil }
-func (m *mockStub) GetBinding() ([]byte, error)                       { return nil, nil }
-func (m *mockStub) GetDecorations() map[string][]byte                 { return nil }
-func (m *mockStub) GetSignedProposal() (*peer.SignedProposal, error)  { return nil, nil }
-func (m *mockStub) GetTxTimestamp() (*timestamppb.Timestamp, error)   { return timestamppb.Now(), nil }
-func (m *mockStub) SetEvent(name string, payload []byte) error        { return nil }
-
-type emptyStateIter struct{}
-
-func (e *emptyStateIter) HasNext() bool                    { return false }
-func (e *emptyStateIter) Close() error                     { return nil }
-func (e *emptyStateIter) Next() (*queryresult.KV, error)   { return nil, nil }
-
-type emptyHistoryIter struct{}
-
-func (e *emptyHistoryIter) HasNext() bool                                    { return false }
-func (e *emptyHistoryIter) Close() error                                     { return nil }
-func (e *emptyHistoryIter) Next() (*queryresult.KeyModification, error)      { return nil, nil }
-
-// ---------------------------------------------------------------------------
-// Mock ClientIdentity
-// ---------------------------------------------------------------------------
-
-type mockClientIdentity struct {
-	mspID string
-}
-
-func (m *mockClientIdentity) GetID() (string, error)   { return "mock-id", nil }
-func (m *mockClientIdentity) GetMSPID() (string, error) { return m.mspID, nil }
-func (m *mockClientIdentity) GetAttributeValue(attrName string) (string, bool, error) {
-	return "", false, nil
-}
-func (m *mockClientIdentity) AssertAttributeValue(attrName, attrValue string) error { return nil }
-func (m *mockClientIdentity) GetX509Certificate() (*x509.Certificate, error)        { return nil, nil }
-
-var _ cid.ClientIdentity = (*mockClientIdentity)(nil)
-
-// ---------------------------------------------------------------------------
-// Mock TransactionContext
-// ---------------------------------------------------------------------------
-
-type mockCtx struct {
-	stub     shim.ChaincodeStubInterface
-	identity cid.ClientIdentity
-}
-
-func (c *mockCtx) GetStub() shim.ChaincodeStubInterface { return c.stub }
-func (c *mockCtx) GetClientIdentity() cid.ClientIdentity { return c.identity }
-
-func newMockCtx(mspID string) *mockCtx {
-	return &mockCtx{
-		stub:     newMockStub(),
-		identity: &mockClientIdentity{mspID: mspID},
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -197,5 +60,72 @@ func TestProductContract_ReadProduct_NotFound(t *testing.T) {
 	_, err := contract.ReadProduct(ctx, "nonexistent-product")
 	if err == nil {
 		t.Fatal("expected error when reading nonexistent product, got nil")
+	}
+}
+
+func TestProductContract_GetAllProducts_Empty(t *testing.T) {
+	ctx := newMockCtx("Org1MSP")
+	contract := &ProductContract{}
+
+	result, err := contract.GetAllProducts(ctx, 10, "")
+	if err != nil {
+		t.Fatalf("GetAllProducts returned unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result, got nil")
+	}
+	if len(result.Products) != 0 {
+		t.Errorf("expected 0 products, got %d", len(result.Products))
+	}
+	if result.Count != 0 {
+		t.Errorf("expected count 0, got %d", result.Count)
+	}
+}
+
+func TestProductContract_GetAllProducts_WithProducts(t *testing.T) {
+	ctx := newMockCtx("Org1MSP")
+	contract := &ProductContract{}
+
+	// Insert 2 products into mock state
+	products := []models.Product{
+		{
+			DocType: "PRODUCT", ID: "prod-001", SKU: "SKU-A",
+			Name: "Widget Alpha", Status: models.ProductStatusActive,
+		},
+		{
+			DocType: "PRODUCT", ID: "prod-002", SKU: "SKU-B",
+			Name: "Widget Beta", Status: models.ProductStatusActive,
+		},
+	}
+	for _, p := range products {
+		data, err := json.Marshal(p)
+		if err != nil {
+			t.Fatalf("failed to marshal product: %v", err)
+		}
+		if err := ctx.GetStub().PutState(models.PrefixProduct+p.ID, data); err != nil {
+			t.Fatalf("PutState failed: %v", err)
+		}
+	}
+
+	result, err := contract.GetAllProducts(ctx, 10, "")
+	if err != nil {
+		t.Fatalf("GetAllProducts returned unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result, got nil")
+	}
+	if len(result.Products) != 2 {
+		t.Fatalf("expected 2 products, got %d", len(result.Products))
+	}
+	if result.Count != 2 {
+		t.Errorf("expected count 2, got %d", result.Count)
+	}
+
+	// Verify products are returned in key order (prod-001 before prod-002)
+	if result.Products[0].ID != "prod-001" {
+		t.Errorf("expected first product ID prod-001, got %s", result.Products[0].ID)
+	}
+	if result.Products[1].ID != "prod-002" {
+		t.Errorf("expected second product ID prod-002, got %s", result.Products[1].ID)
 	}
 }

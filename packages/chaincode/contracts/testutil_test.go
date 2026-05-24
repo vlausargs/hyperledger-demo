@@ -1,10 +1,8 @@
-package ledger
+package contracts
 
 import (
 	"crypto/x509"
-	"encoding/json"
 	"sort"
-	"testing"
 
 	"github.com/hyperledger/fabric-chaincode-go/v2/pkg/cid"
 	"github.com/hyperledger/fabric-chaincode-go/v2/shim"
@@ -25,11 +23,9 @@ func newMockStub() *mockStub {
 	return &mockStub{state: make(map[string][]byte)}
 }
 
-func (m *mockStub) GetState(key string) ([]byte, error)      { return m.state[key], nil }
-func (m *mockStub) PutState(key string, value []byte) error  { m.state[key] = value; return nil }
-func (m *mockStub) DelState(key string) error                 { delete(m.state, key); return nil }
-
-// ---- Unused stubs to satisfy the interface ----
+func (m *mockStub) GetState(key string) ([]byte, error)     { return m.state[key], nil }
+func (m *mockStub) PutState(key string, value []byte) error { m.state[key] = value; return nil }
+func (m *mockStub) DelState(key string) error               { delete(m.state, key); return nil }
 
 func (m *mockStub) GetArgs() [][]byte                                           { return nil }
 func (m *mockStub) GetStringArgs() []string                                      { return nil }
@@ -43,7 +39,8 @@ func (m *mockStub) InvokeChaincode(name string, args [][]byte, channel string) *
 func (m *mockStub) SetStateValidationParameter(key string, ep []byte) error      { return nil }
 func (m *mockStub) GetStateValidationParameter(key string) ([]byte, error)       { return nil, nil }
 
-// keysInRange returns sorted keys from the state map within [startKey, endKey).
+// keysInRange returns sorted keys from the state map that fall within [startKey, endKey).
+// If endKey is empty, all keys >= startKey are returned.
 func (m *mockStub) keysInRange(startKey, endKey string) []string {
 	var keys []string
 	for k := range m.state {
@@ -70,6 +67,8 @@ func (m *mockStub) GetStateByRange(startKey, endKey string) (shim.StateQueryIter
 
 func (m *mockStub) GetStateByRangeWithPagination(startKey, endKey string, pageSize int32, bookmark string) (shim.StateQueryIteratorInterface, *peer.QueryResponseMetadata, error) {
 	keys := m.keysInRange(startKey, endKey)
+
+	// Apply bookmark: skip keys until we pass the bookmark key.
 	if bookmark != "" {
 		idx := -1
 		for i, k := range keys {
@@ -82,11 +81,14 @@ func (m *mockStub) GetStateByRangeWithPagination(startKey, endKey string, pageSi
 			keys = keys[idx+1:]
 		}
 	}
+
+	// Apply page size limit.
 	nextBookmark := ""
 	if int(pageSize) > 0 && len(keys) > int(pageSize) {
 		nextBookmark = keys[pageSize]
 		keys = keys[:pageSize]
 	}
+
 	var items []*queryresult.KV
 	for _, k := range keys {
 		items = append(items, &queryresult.KV{Key: k, Value: m.state[k]})
@@ -135,16 +137,16 @@ func (m *mockStub) GetPrivateDataByPartialCompositeKey(collection, objectType st
 func (m *mockStub) GetPrivateDataQueryResult(collection, query string) (shim.StateQueryIteratorInterface, error) {
 	return &sliceStateIter{idx: -1}, nil
 }
-func (m *mockStub) GetCreator() ([]byte, error)                        { return nil, nil }
-func (m *mockStub) GetTransient() (map[string][]byte, error)           { return nil, nil }
-func (m *mockStub) GetBinding() ([]byte, error)                        { return nil, nil }
-func (m *mockStub) GetDecorations() map[string][]byte                  { return nil }
-func (m *mockStub) GetSignedProposal() (*peer.SignedProposal, error)   { return nil, nil }
-func (m *mockStub) GetTxTimestamp() (*timestamppb.Timestamp, error)    { return timestamppb.Now(), nil }
-func (m *mockStub) SetEvent(name string, payload []byte) error         { return nil }
+func (m *mockStub) GetCreator() ([]byte, error)                       { return nil, nil }
+func (m *mockStub) GetTransient() (map[string][]byte, error)          { return nil, nil }
+func (m *mockStub) GetBinding() ([]byte, error)                       { return nil, nil }
+func (m *mockStub) GetDecorations() map[string][]byte                 { return nil }
+func (m *mockStub) GetSignedProposal() (*peer.SignedProposal, error)  { return nil, nil }
+func (m *mockStub) GetTxTimestamp() (*timestamppb.Timestamp, error)   { return timestamppb.Now(), nil }
+func (m *mockStub) SetEvent(name string, payload []byte) error        { return nil }
 
 // ---------------------------------------------------------------------------
-// State iterator backed by a slice
+// State iterator backed by a slice of KV pairs
 // ---------------------------------------------------------------------------
 
 type sliceStateIter struct {
@@ -166,15 +168,18 @@ func (s *sliceStateIter) Next() (*queryresult.KV, error) {
 	return s.items[s.idx], nil
 }
 
-// emptyHistoryIter -- always empty iterator for HistoryQueryIteratorInterface
+// ---------------------------------------------------------------------------
+// Empty history iterator
+// ---------------------------------------------------------------------------
+
 type emptyHistoryIter struct{}
 
-func (e *emptyHistoryIter) HasNext() bool                            { return false }
-func (e *emptyHistoryIter) Close() error                             { return nil }
-func (e *emptyHistoryIter) Next() (*queryresult.KeyModification, error) { return nil, nil }
+func (e *emptyHistoryIter) HasNext() bool                                    { return false }
+func (e *emptyHistoryIter) Close() error                                     { return nil }
+func (e *emptyHistoryIter) Next() (*queryresult.KeyModification, error)      { return nil, nil }
 
 // ---------------------------------------------------------------------------
-// Minimal mock ClientIdentity
+// Mock ClientIdentity
 // ---------------------------------------------------------------------------
 
 type mockClientIdentity struct {
@@ -189,11 +194,10 @@ func (m *mockClientIdentity) GetAttributeValue(attrName string) (string, bool, e
 func (m *mockClientIdentity) AssertAttributeValue(attrName, attrValue string) error { return nil }
 func (m *mockClientIdentity) GetX509Certificate() (*x509.Certificate, error)        { return nil, nil }
 
-// Ensure mockClientIdentity satisfies cid.ClientIdentity
 var _ cid.ClientIdentity = (*mockClientIdentity)(nil)
 
 // ---------------------------------------------------------------------------
-// Minimal mock TransactionContext
+// Mock TransactionContext
 // ---------------------------------------------------------------------------
 
 type mockCtx struct {
@@ -204,132 +208,9 @@ type mockCtx struct {
 func (c *mockCtx) GetStub() shim.ChaincodeStubInterface { return c.stub }
 func (c *mockCtx) GetClientIdentity() cid.ClientIdentity { return c.identity }
 
-func newMockCtx() *mockCtx {
+func newMockCtx(mspID string) *mockCtx {
 	return &mockCtx{
 		stub:     newMockStub(),
-		identity: &mockClientIdentity{mspID: "TestMSP"},
+		identity: &mockClientIdentity{mspID: mspID},
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-type sampleAsset struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Value int    `json:"value"`
-}
-
-func TestPutJSONAndGetByID(t *testing.T) {
-	store := NewStore()
-	ctx := newMockCtx()
-
-	asset := sampleAsset{ID: "asset1", Name: "widget", Value: 42}
-
-	if err := store.PutJSON(ctx, "asset1", asset); err != nil {
-		t.Fatalf("PutJSON failed: %v", err)
-	}
-
-	var got sampleAsset
-	if err := store.GetByID(ctx, "asset1", &got); err != nil {
-		t.Fatalf("GetByID failed: %v", err)
-	}
-
-	if got.ID != asset.ID || got.Name != asset.Name || got.Value != asset.Value {
-		t.Errorf("GetByID returned %+v, want %+v", got, asset)
-	}
-}
-
-func TestGetByID_NotFound(t *testing.T) {
-	store := NewStore()
-	ctx := newMockCtx()
-
-	var got sampleAsset
-	err := store.GetByID(ctx, "nonexistent", &got)
-	if err == nil {
-		t.Fatal("expected error for nonexistent key, got nil")
-	}
-}
-
-func TestExists(t *testing.T) {
-	store := NewStore()
-	ctx := newMockCtx()
-
-	exists, err := store.Exists(ctx, "key1")
-	if err != nil {
-		t.Fatalf("Exists failed: %v", err)
-	}
-	if exists {
-		t.Error("expected false for missing key, got true")
-	}
-
-	// Put a value and check again
-	data, _ := json.Marshal(sampleAsset{ID: "key1"})
-	if err := ctx.GetStub().PutState("key1", data); err != nil {
-		t.Fatalf("PutState failed: %v", err)
-	}
-
-	exists, err = store.Exists(ctx, "key1")
-	if err != nil {
-		t.Fatalf("Exists failed: %v", err)
-	}
-	if !exists {
-		t.Error("expected true for existing key, got false")
-	}
-}
-
-func TestGetByRange(t *testing.T) {
-	s := NewStore()
-	ctx := newMockCtx()
-
-	// Insert 3 items with sequential keys under a prefix
-	assets := []sampleAsset{
-		{ID: "item-001", Name: "first", Value: 1},
-		{ID: "item-002", Name: "second", Value: 2},
-		{ID: "item-003", Name: "third", Value: 3},
-	}
-	for _, a := range assets {
-		if err := s.PutJSON(ctx, "PREFIX~"+a.ID, a); err != nil {
-			t.Fatalf("PutJSON failed: %v", err)
-		}
-	}
-
-	// Also insert an item outside the range to ensure filtering works
-	if err := s.PutJSON(ctx, "OTHER~item-999", sampleAsset{ID: "item-999", Name: "outside", Value: 99}); err != nil {
-		t.Fatalf("PutJSON failed: %v", err)
-	}
-
-	// Query the PREFIX~ range
-	var results []sampleAsset
-	err := s.GetByRange(ctx, "PREFIX~", "PREFIX~\x7f", func(b []byte) error {
-		var a sampleAsset
-		if err := json.Unmarshal(b, &a); err != nil {
-			return err
-		}
-		results = append(results, a)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("GetByRange returned unexpected error: %v", err)
-	}
-
-	if len(results) != 3 {
-		t.Fatalf("expected 3 results, got %d", len(results))
-	}
-
-	// Verify sorted order
-	if results[0].ID != "item-001" {
-		t.Errorf("expected first result ID item-001, got %s", results[0].ID)
-	}
-	if results[1].ID != "item-002" {
-		t.Errorf("expected second result ID item-002, got %s", results[1].ID)
-	}
-	if results[2].ID != "item-003" {
-		t.Errorf("expected third result ID item-003, got %s", results[2].ID)
-	}
-}
-
-func TestQueryBySelector(t *testing.T) {
-	t.Skip("requires CouchDB")
 }
