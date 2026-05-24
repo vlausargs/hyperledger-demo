@@ -1,0 +1,31 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'hlf-api-org1'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: /metrics
+
+  - job_name: 'hlf-api-org2'
+    static_configs:
+      - targets: ['localhost:8081']
+    metrics_path: /metrics
+
+  - job_name: 'hlf-api-org3'
+    static_configs:
+      - targets: ['localhost:8082']
+    metrics_path: /metrics
+
+  - job_name: 'peer-org1'
+    static_configs:
+      - targets: ['localhost:8445']
+
+  - job_name: 'peer-org2'
+    static_configs:
+      - targets: ['localhost:9443']
+
+  - job_name: 'peer-org3'
+    static_configs:
+      - targets: ['localhost:10443']
