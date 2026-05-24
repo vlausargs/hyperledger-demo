@@ -1,0 +1,17 @@
+orderer:
+  host: localhost
+
+external_hosts:
+  orderer: localhost
+  orgs: localhost
+  cas: localhost
+  peers: localhost
+
+logging:
+  level: INFO
+
+tls:
+  enabled: true
+  client_auth_required: false
+
+dev_mode: false

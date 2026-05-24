@@ -1,0 +1,29 @@
+name: Org1MSP
+role: manufacturer
+domain: org1.example.com
+
+peer:
+  host: localhost
+  port: 8051
+  couchdb_port: 5984
+  metrics_port: 8445
+
+ca:
+  port: 8054
+  admin_id: ca-admin
+
+api:
+  port: 8080
+
+postgres:
+  host: localhost
+  port: 5436
+  database: fabric_ca_org1
+
+identities:
+  admin:
+    id: admin
+  users:
+    - id: user1
+  peer:
+    id: peer0

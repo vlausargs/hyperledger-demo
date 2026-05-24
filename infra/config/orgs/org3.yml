@@ -1,0 +1,29 @@
+name: Org3MSP
+role: retailer
+domain: org3.example.com
+
+peer:
+  host: localhost
+  port: 10051
+  couchdb_port: 9984
+  metrics_port: 10443
+
+ca:
+  port: 10054
+  admin_id: ca-admin
+
+api:
+  port: 8082
+
+postgres:
+  host: localhost
+  port: 5438
+  database: fabric_ca_org3
+
+identities:
+  admin:
+    id: admin
+  users:
+    - id: user1
+  peer:
+    id: peer0

@@ -1,0 +1,29 @@
+name: Org2MSP
+role: distributor
+domain: org2.example.com
+
+peer:
+  host: localhost
+  port: 9051
+  couchdb_port: 7984
+  metrics_port: 9443
+
+ca:
+  port: 9054
+  admin_id: ca-admin
+
+api:
+  port: 8081
+
+postgres:
+  host: localhost
+  port: 5437
+  database: fabric_ca_org2
+
+identities:
+  admin:
+    id: admin
+  users:
+    - id: user1
+  peer:
+    id: peer0
