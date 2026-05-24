@@ -1,4 +1,4 @@
-.PHONY: build-chaincode build-api test-chaincode test-api test lint clean deploy-monitoring stop-monitoring deploy-api deploy-web deploy-proxy deploy-all stop-api stop-web stop-proxy stop-all
+.PHONY: build-chaincode build-api test-chaincode test-api test lint clean deploy-monitoring stop-monitoring deploy-api deploy-web deploy-proxy deploy-all stop-api stop-web stop-proxy stop-all config-validate config-policy test-config
 
 build-chaincode:
 	cd packages/chaincode && go build -o ../../bin/chaincode .
@@ -54,3 +54,12 @@ stop-proxy:
 	docker compose -f infra/docker/compose.proxy.yml down
 
 stop-all: stop-api stop-web stop-proxy stop-monitoring
+
+config-validate:
+	cd infra/configloader && go run ./cmd/main.go validate
+
+config-policy:
+	cd infra/configloader && go run ./cmd/main.go policy
+
+test-config:
+	cd infra/configloader && go test ./... -v
