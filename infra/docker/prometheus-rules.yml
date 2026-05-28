@@ -1,0 +1,89 @@
+groups:
+  - name: hlf-fabric
+    interval: 30s
+    rules:
+      - alert: FabricPeerDown
+        expr: up{job=~"peer-.*|fabric-peer"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: fabric-peer
+        annotations:
+          summary: "Fabric peer {{ $labels.job }} is down"
+          description: "Peer {{ $labels.instance }} (job={{ $labels.job }}) has been unreachable for more than 5 minutes."
+
+  - name: hlf-api
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_requests_total[5m])), 1e-10)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API 5xx error rate above 5%"
+          description: "Aggregate 5xx error rate is {{ $value | humanizePercentage }} over the last 5m."
+
+      - alert: ChaincodeSlowP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, function) (rate(chaincode_execution_duration_seconds_bucket[5m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: chaincode
+        annotations:
+          summary: "Chaincode p95 execution > 5s ({{ $labels.function }})"
+          description: "Chaincode function {{ $labels.function }} has p95 execution latency {{ $value }}s for 10m."
+
+  - name: hlf-infra
+    interval: 60s
+    rules:
+      - alert: DiskUsageHigh
+        expr: |
+          (
+            1 - (
+              node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+              /
+              node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}
+            )
+          ) > 0.8
+        for: 15m
+        labels:
+          severity: warning
+          component: host
+        annotations:
+          summary: "Disk usage > 80% on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          description: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} is at {{ $value | humanizePercentage }}."
+
+      - alert: CouchDBLatencySpike
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(couchdb_query_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: couchdb
+        annotations:
+          summary: "CouchDB p95 query latency > 1s"
+          description: "CouchDB p95 query latency is {{ $value }}s. Requires couchdb_exporter to be scraped."
+
+      - alert: CertExpirySoon
+        expr: (ssl_cert_not_after - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: warning
+          component: tls
+        annotations:
+          summary: "TLS certificate for {{ $labels.instance }} expires in < 30 days"
+          description: "Cert for {{ $labels.instance }} expires in {{ $value }} days. Requires blackbox_exporter ssl probe."
