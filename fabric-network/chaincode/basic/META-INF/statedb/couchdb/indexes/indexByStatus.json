@@ -1,8 +1,0 @@
-{
-  "index": {
-    "fields": ["docType", "status"]
-  },
-  "ddoc": "indexByStatusDoc",
-  "name": "indexByStatus",
-  "type": "json"
-}

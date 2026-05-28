@@ -53,8 +53,8 @@ echo ""
 print_status $YELLOW "Verifying prerequisites..."
 
 # Check if chaincode directory exists
-if [ ! -d "${PROJECT_ROOT}/fabric-network/chaincode/basic" ]; then
-    print_status $RED "Error: Chaincode directory not found at ${PROJECT_ROOT}/fabric-network/chaincode/basic"
+if [ ! -d "${PROJECT_ROOT}/packages/chaincode" ]; then
+    print_status $RED "Error: Chaincode directory not found at ${PROJECT_ROOT}/packages/chaincode"
     exit 1
 fi
 
@@ -83,8 +83,10 @@ package_chaincode_host() {
     local temp_dir="${PROJECT_ROOT}/fabric-network/temp-package"
     mkdir -p "${temp_dir}"
 
-    # Copy chaincode to temp directory with proper structure
-    cp -r "${PROJECT_ROOT}/fabric-network/chaincode/basic" "${temp_dir}/basic"
+    # Copy chaincode to temp directory with proper structure.
+    # The fabric-tools packager expects a self-contained module at the
+    # --path location, so we copy packages/chaincode/* into temp/basic/.
+    cp -r "${PROJECT_ROOT}/packages/chaincode" "${temp_dir}/basic"
 
     # Use a temporary container with fabric-tools to package the chaincode
     docker run --rm \

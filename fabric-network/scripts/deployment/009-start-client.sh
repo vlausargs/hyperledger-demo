@@ -161,7 +161,7 @@ start_org_client() {
     MSP_ID="${org_msp}" \
     CA_ADMIN_MSP_DIR="${bootstrap_admin_dir}" \
     GODEBUG=netdns=cgo \
-    nohup "${PROJECT_ROOT}/fabric-network/client/fabric-client" > "${log_file}" 2>&1 &
+    nohup "${PROJECT_ROOT}/bin/server" > "${log_file}" 2>&1 &
 
     local pid=$!
     sleep 3
@@ -187,22 +187,22 @@ start_org_client() {
 }
 
 # -------------------------------------------------------------------
-# Build binary once
+# Build binary once via Makefile target (packages/api → bin/server).
 # -------------------------------------------------------------------
-print_status $YELLOW "Building client application..."
-cd "${PROJECT_ROOT}/fabric-network/client"
+print_status $YELLOW "Building API server binary..."
+cd "${PROJECT_ROOT}"
+make build-api
 
-print_status $YELLOW "Downloading Go dependencies..."
-go mod download 2>&1 || go mod download
+if [ ! -x "${PROJECT_ROOT}/bin/server" ]; then
+    print_status $RED "✗ bin/server not produced — make build-api failed"
+    exit 1
+fi
+print_status $GREEN "✓ Server binary built at bin/server"
 
-print_status $YELLOW "Compiling..."
-go build -o fabric-client main.go
-
-print_status $GREEN "✓ Client binary built"
-
-# Stop any existing instances
-if pgrep -f "fabric-client" > /dev/null; then
+# Stop any existing instances (match either legacy name or new path).
+if pgrep -f "bin/server" > /dev/null || pgrep -f "fabric-client" > /dev/null; then
     print_status $YELLOW "Stopping existing client instances..."
+    pkill -f "bin/server" || true
     pkill -f "fabric-client" || true
     sleep 2
 fi
@@ -246,4 +246,4 @@ echo ""
 [ "$DEPLOY_ORG2" = true ] && echo "  Org2 (Distributor):  http://localhost:8081  logs: /tmp/fabric-client-Org2.log"
 [ "$DEPLOY_ORG3" = true ] && echo "  Org3 (Retailer):     http://localhost:8082  logs: /tmp/fabric-client-Org3.log"
 echo ""
-print_status $YELLOW "Stop all: pkill -f fabric-client"
+print_status $YELLOW "Stop all: pkill -f bin/server"

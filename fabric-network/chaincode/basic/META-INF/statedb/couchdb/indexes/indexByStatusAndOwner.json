@@ -1,1 +1,0 @@
-{"index":{"fields":["docType","status","currentOwnerMSP"]},"ddoc":"indexByStatusAndOwnerDoc","name":"indexByStatusAndOwner","type":"json"}

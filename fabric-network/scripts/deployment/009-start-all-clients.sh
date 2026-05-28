@@ -23,7 +23,10 @@ if [ ! -f "${PROJECT_ROOT}/.env" ]; then
 fi
 source "${PROJECT_ROOT}/.env"
 
+# Runtime artifacts (crypto, wallets, logs) still live here. Source code
+# moved to packages/api; binary is built into ${PROJECT_ROOT}/bin/server.
 CLIENT_DIR="${PROJECT_ROOT}/fabric-network/client"
+SERVER_BIN="${PROJECT_ROOT}/bin/server"
 
 # Prefer gvm go1.25.10 if available
 if [ -d "$HOME/.gvm/gos/go1.25.10/bin" ]; then
@@ -34,11 +37,11 @@ fi
 # ─── Build binary (once) ─────────────────────────────────────────────────────
 
 build_client() {
-    print_status $YELLOW "Building fabric-client binary..."
-    cd "$CLIENT_DIR"
-    go mod download 2>&1 || { print_status $RED "go mod download failed"; exit 1; }
-    go build -o fabric-client main.go 2>&1 || { print_status $RED "go build failed"; exit 1; }
-    print_status $GREEN "✓ Binary built"
+    print_status $YELLOW "Building API server binary (packages/api → bin/server)..."
+    cd "$PROJECT_ROOT"
+    make build-api 2>&1 || { print_status $RED "make build-api failed"; exit 1; }
+    [ -x "$SERVER_BIN" ] || { print_status $RED "✗ $SERVER_BIN missing"; exit 1; }
+    print_status $GREEN "✓ Binary built at $SERVER_BIN"
 }
 
 # ─── Setup crypto for one org ─────────────────────────────────────────────────
@@ -146,7 +149,7 @@ start_client_for_org() {
     CA_NAME="${ca_name}" \
     MSP_ID="${org_msp}" \
     CA_ADMIN_MSP_DIR="$admin_msp_dir" \
-    nohup "${CLIENT_DIR}/fabric-client" > "$log_file" 2>&1 &
+    nohup "$SERVER_BIN" > "$log_file" 2>&1 &
 
     local pid=$!
     disown $pid 2>/dev/null || true
@@ -199,7 +202,7 @@ echo "  Health checks:"
 [ "${DEPLOY_ORG3}" = "true" ] && echo "    curl http://localhost:8082/health"
 echo ""
 echo "  Stop all clients:"
-echo "    pkill -f fabric-client"
+echo "    pkill -f bin/server"
 echo ""
 print_status $YELLOW "Login credentials: username=admin  password=asdqwe123"
 echo ""

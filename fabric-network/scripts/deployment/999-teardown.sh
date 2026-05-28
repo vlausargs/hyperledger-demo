@@ -237,22 +237,40 @@ cleanup_artifacts() {
 stop_client() {
     print_status $YELLOW "Stopping client application..."
 
-    # Kill fabric-client process
+    # Kill running API/chaincode processes (new bin/server + legacy fabric-client name).
+    local killed=false
+    if pgrep -f "bin/server" > /dev/null; then
+        pkill -f "bin/server" || true
+        killed=true
+    fi
     if pgrep -f "fabric-client" > /dev/null; then
-        pkill -f "fabric-client"
+        pkill -f "fabric-client" || true
+        killed=true
+    fi
+    if [ "$killed" = true ]; then
         print_status $GREEN "✓ Client application stopped"
     else
         print_status $BLUE "Client application not running"
     fi
 
-    # Remove client binary
+    # Remove built binaries (new packages/ layout).
+    if [ -f "${PROJECT_ROOT}/bin/server" ]; then
+        rm -f "${PROJECT_ROOT}/bin/server"
+        print_status $GREEN "✓ bin/server removed"
+    fi
+    if [ -f "${PROJECT_ROOT}/bin/chaincode" ]; then
+        rm -f "${PROJECT_ROOT}/bin/chaincode"
+        print_status $GREEN "✓ bin/chaincode removed"
+    fi
+
+    # Remove legacy binaries (pre-restructure layout) if still present.
     if [ -f "${PROJECT_ROOT}/client/fabric-client" ]; then
         rm -f "${PROJECT_ROOT}/client/fabric-client"
-        print_status $GREEN "✓ Client binary removed"
+        print_status $GREEN "✓ Legacy client/fabric-client removed"
     fi
     if [ -f "${PROJECT_ROOT}/fabric-network/client/fabric-client" ]; then
         rm -f "${PROJECT_ROOT}/fabric-network/client/fabric-client"
-        print_status $GREEN "✓ Client binary (fabric-network) removed"
+        print_status $GREEN "✓ Legacy fabric-network/client/fabric-client removed"
     fi
 }
 
