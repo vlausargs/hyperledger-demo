@@ -172,15 +172,6 @@ func (c *FullConfig) Validate() error {
 	return nil
 }
 
-func (c *FullConfig) GetOrgByName(name string) *OrgConfig {
-	for i := range c.Orgs {
-		if c.Orgs[i].Name == name {
-			return &c.Orgs[i]
-		}
-	}
-	return nil
-}
-
 func (c *FullConfig) GetOrgByRole(role string) *OrgConfig {
 	for i := range c.Orgs {
 		if c.Orgs[i].Role == role {

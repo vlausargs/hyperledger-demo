@@ -33,14 +33,6 @@ func NotFound(c *gin.Context, msg string) {
 	c.JSON(http.StatusNotFound, gin.H{"error": msg})
 }
 
-func Conflict(c *gin.Context, msg string) {
-	c.JSON(http.StatusConflict, gin.H{"error": msg})
-}
-
-func InternalError(c *gin.Context, msg string) {
-	c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
-}
-
 func Unavailable(c *gin.Context, msg string) {
 	c.JSON(http.StatusServiceUnavailable, gin.H{"error": msg})
 }

@@ -223,8 +223,5 @@ func (c *CAClient) RemoveIdentity(name, walletDir string) error {
 	return nil
 }
 
-// GetCAURL returns the CA URL.
-func (c *CAClient) GetCAURL() string { return c.caURL }
-
 // GetCAName returns the CA name.
 func (c *CAClient) GetCAName() string { return c.caName }

@@ -1,13 +1,14 @@
 package errors
 
-import "fmt"
-
 type AppError struct {
 	Code    int
 	Message string
 	Detail  string
 }
 
+// Error satisfies the error interface so *AppError can be returned as error
+// from constructors that wrap external libraries. Required for type contract
+// even when callers handle *AppError concretely.
 func (e *AppError) Error() string {
 	return e.Message
 }
@@ -38,8 +39,4 @@ func NewForbidden(msg string) *AppError {
 
 func NewUnavailable(msg string) *AppError {
 	return &AppError{Code: 503, Message: msg}
-}
-
-func Wrap(err error, msg string) *AppError {
-	return &AppError{Code: 500, Message: msg, Detail: fmt.Sprintf("%v", err)}
 }
