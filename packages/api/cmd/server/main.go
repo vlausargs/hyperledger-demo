@@ -14,6 +14,7 @@ import (
 	"github.com/myindo/hlf-supply-chain/api/internal/config"
 	"github.com/myindo/hlf-supply-chain/api/internal/fabric"
 	"github.com/myindo/hlf-supply-chain/api/internal/router"
+	"github.com/myindo/hlf-supply-chain/api/internal/service"
 )
 
 func main() {
@@ -62,9 +63,12 @@ func main() {
 		caClient = nil
 	}
 
+	// Build the service-layer bundle that handlers depend on.
+	svcs := service.New(fabricGateway, caClient, cfg.WalletPath, cfg.MSPID, cfg.JWTSecret)
+
 	// Create Gin router and register all routes
 	r := gin.New()
-	router.Setup(r, fabricGateway, caClient, cfg.CORSAllowedOrigin, cfg.WalletPath, cfg.JWTSecret, cfg.MSPID)
+	router.Setup(r, svcs, cfg.CORSAllowedOrigin, cfg.JWTSecret)
 
 	// Create HTTP server
 	server := &http.Server{

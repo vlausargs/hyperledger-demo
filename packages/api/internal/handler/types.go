@@ -1,25 +1,12 @@
 package handler
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hyperledger/fabric-gateway/pkg/client"
-	"github.com/myindo/hlf-supply-chain/api/internal/fabric"
 )
-
-// FabricGateway interface for interacting with Fabric
-type FabricGateway interface {
-	GetContract() *client.Contract
-	SubmitTransaction(function string, args ...string) ([]byte, error)
-	EvaluateTransaction(function string, args ...string) ([]byte, error)
-	GetChannel() string
-	GetChaincode() string
-	GetConnectionProfile() *fabric.ConnectionProfile
-}
 
 // ── Product request types ────────────────────────────────────────────────────
 
@@ -141,22 +128,10 @@ func validateID(kind, id string) error {
 	return nil
 }
 
-func validateProductID(id string) error  { return validateID("product", id) }
-func validateSaleID(id string) error     { return validateID("sale", id) }
-
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
-func evalJSON(gw FabricGateway, fn string, args ...string) (json.RawMessage, error) {
-	b, err := gw.EvaluateTransaction(fn, args...)
-	if err != nil {
-		return nil, err
-	}
-	if len(b) == 0 {
-		return json.RawMessage("null"), nil
-	}
-	return b, nil
-}
-
+// paged extracts pageSize + bookmark from the query string, clamping
+// pageSize to [1, 100] with a default of 20.
 func paged(c *gin.Context) (string, string) {
 	ps := c.DefaultQuery("pageSize", "20")
 	bm := c.DefaultQuery("bookmark", "")
@@ -168,12 +143,4 @@ func paged(c *gin.Context) (string, string) {
 		n = 100
 	}
 	return strconv.Itoa(n), bm
-}
-
-func jsonMarshal(v interface{}) (string, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "", fmt.Errorf("marshal failed: %w", err)
-	}
-	return string(b), nil
 }

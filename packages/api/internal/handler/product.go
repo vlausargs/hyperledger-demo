@@ -3,182 +3,139 @@ package handler
 import (
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/myindo/hlf-supply-chain/api/internal/service"
+	"github.com/myindo/hlf-supply-chain/api/pkg/response"
 )
 
-func GetAllProducts(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cid, _ := c.Get("correlationID")
-		ps, bm := paged(c)
-		result, err := evalJSON(gw, "GetAllProducts", ps, bm)
-		if err != nil {
-			slog.Error("GetAllProducts failed", "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve products"})
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	}
+// ProductHandler routes HTTP requests to ProductService. Handlers are thin:
+// parse + validate input, call the service, render the result/error.
+type ProductHandler struct {
+	svc *service.ProductService
 }
 
-func GetProduct(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-		if err := validateID("product", id); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		cid, _ := c.Get("correlationID")
-		result, err := evalJSON(gw, "ReadProduct", id)
-		if err != nil {
-			slog.Error("GetProduct failed", "id", id, "error", err, "correlation_id", cid)
-			if strings.Contains(err.Error(), "does not exist") {
-				c.JSON(http.StatusNotFound, gin.H{"error": "product not found"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve product"})
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	}
+func NewProductHandler(svc *service.ProductService) *ProductHandler {
+	return &ProductHandler{svc: svc}
 }
 
-func CreateProduct(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req CreateProductRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		metaJSON := "{}"
-		if req.Metadata != nil {
-			if s, err := jsonMarshal(req.Metadata); err == nil {
-				metaJSON = s
-			}
-		}
-		cid, _ := c.Get("correlationID")
-		_, err := gw.SubmitTransaction("CreateProduct",
-			req.ID, req.SKU, req.Name, req.Description,
-			req.BatchID, req.ManufacturerName, req.ExpiryDate, metaJSON)
-		if err != nil {
-			slog.Error("CreateProduct failed", "id", req.ID, "error", err, "correlation_id", cid)
-			if strings.Contains(err.Error(), "already exists") {
-				c.JSON(http.StatusConflict, gin.H{"error": "product already exists"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create product"})
-			return
-		}
-		c.JSON(http.StatusCreated, gin.H{"message": "product created", "id": req.ID})
+func (h *ProductHandler) List(c *gin.Context) {
+	ps, bm := paged(c)
+	result, err := h.svc.List(c.Request.Context(), ps, bm)
+	if err != nil {
+		slog.Error("ProductHandler.List failed", "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
 	}
+	c.Data(http.StatusOK, "application/json", result)
 }
 
-func UpdateProduct(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-		if err := validateID("product", id); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		var req UpdateProductRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		metaJSON := ""
-		if req.Metadata != nil {
-			if s, err := jsonMarshal(req.Metadata); err == nil {
-				metaJSON = s
-			}
-		}
-		cid, _ := c.Get("correlationID")
-		_, err := gw.SubmitTransaction("UpdateProduct", id, req.Name, req.Description, req.ExpiryDate, metaJSON)
-		if err != nil {
-			slog.Error("UpdateProduct failed", "id", id, "error", err, "correlation_id", cid)
-			if strings.Contains(err.Error(), "does not exist") {
-				c.JSON(http.StatusNotFound, gin.H{"error": "product not found"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update product"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "product updated", "id": id})
+func (h *ProductHandler) Get(c *gin.Context) {
+	id := c.Param("id")
+	if vErr := validateID("product", id); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
 	}
+	result, err := h.svc.Get(c.Request.Context(), id)
+	if err != nil {
+		slog.Error("ProductHandler.Get failed", "id", id, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/json", result)
 }
 
-func GetProductHistory(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-		if err := validateID("product", id); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		cid, _ := c.Get("correlationID")
-		result, err := evalJSON(gw, "GetProductHistory", id)
-		if err != nil {
-			slog.Error("GetProductHistory failed", "id", id, "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve product history"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"id": id, "history": result})
+func (h *ProductHandler) Create(c *gin.Context) {
+	var req CreateProductRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
 	}
+	res, err := h.svc.Create(c.Request.Context(), service.CreateProductInput(req))
+	if err != nil {
+		slog.Error("ProductHandler.Create failed", "id", req.ID, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, gin.H{"message": "product created", "id": res.ID})
 }
 
-func GetProductProvenance(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-		if err := validateID("product", id); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		cid, _ := c.Get("correlationID")
-		result, err := evalJSON(gw, "GetProvenance", id)
-		if err != nil {
-			slog.Error("GetProductProvenance failed", "id", id, "error", err, "correlation_id", cid)
-			if strings.Contains(err.Error(), "does not exist") {
-				c.JSON(http.StatusNotFound, gin.H{"error": "product not found"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve provenance"})
-			return
-		}
-		c.JSON(http.StatusOK, result)
+func (h *ProductHandler) Update(c *gin.Context) {
+	id := c.Param("id")
+	if vErr := validateID("product", id); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
 	}
+	var req UpdateProductRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	res, err := h.svc.Update(c.Request.Context(), id, service.UpdateProductInput(req))
+	if err != nil {
+		slog.Error("ProductHandler.Update failed", "id", id, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, gin.H{"message": "product updated", "id": res.ID})
 }
 
-func GetProductsByBatch(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		batchID := c.Param("batchId")
-		if err := validateID("batch", batchID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		cid, _ := c.Get("correlationID")
-		result, err := evalJSON(gw, "GetProductsByBatch", batchID)
-		if err != nil {
-			slog.Error("GetProductsByBatch failed", "batchId", batchID, "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve products by batch"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"batchId": batchID, "products": result})
+func (h *ProductHandler) History(c *gin.Context) {
+	id := c.Param("id")
+	if vErr := validateID("product", id); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
 	}
+	result, err := h.svc.History(c.Request.Context(), id)
+	if err != nil {
+		slog.Error("ProductHandler.History failed", "id", id, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, gin.H{"id": id, "history": result})
 }
 
-func GetProductsByStatus(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		status := c.Param("status")
-		if status == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
-			return
-		}
-		cid, _ := c.Get("correlationID")
-		result, err := evalJSON(gw, "GetProductsByStatus", status)
-		if err != nil {
-			slog.Error("GetProductsByStatus failed", "status", status, "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve products by status"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": status, "products": result})
+func (h *ProductHandler) Provenance(c *gin.Context) {
+	id := c.Param("id")
+	if vErr := validateID("product", id); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
 	}
+	result, err := h.svc.Provenance(c.Request.Context(), id)
+	if err != nil {
+		slog.Error("ProductHandler.Provenance failed", "id", id, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/json", result)
+}
+
+func (h *ProductHandler) ByBatch(c *gin.Context) {
+	batchID := c.Param("batchId")
+	if vErr := validateID("batch", batchID); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
+	}
+	result, err := h.svc.ByBatch(c.Request.Context(), batchID)
+	if err != nil {
+		slog.Error("ProductHandler.ByBatch failed", "batchId", batchID, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, gin.H{"batchId": batchID, "products": result})
+}
+
+func (h *ProductHandler) ByStatus(c *gin.Context) {
+	status := c.Param("status")
+	if status == "" {
+		response.BadRequest(c, "status is required")
+		return
+	}
+	result, err := h.svc.ByStatus(c.Request.Context(), status)
+	if err != nil {
+		slog.Error("ProductHandler.ByStatus failed", "status", status, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, gin.H{"status": status, "products": result})
 }

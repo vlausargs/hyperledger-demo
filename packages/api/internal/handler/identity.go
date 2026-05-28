@@ -2,121 +2,83 @@ package handler
 
 import (
 	"log/slog"
-	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/myindo/hlf-supply-chain/api/internal/fabric"
+	"github.com/myindo/hlf-supply-chain/api/internal/service"
+	"github.com/myindo/hlf-supply-chain/api/pkg/response"
 )
 
-// GetIdentities handles GET /identities — list all CA identities.
-func GetIdentities(ca *fabric.CAClient) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cid, _ := c.Get("correlationID")
-		identities, err := ca.ListIdentities()
-		if err != nil {
-			slog.Error("ListIdentities failed", "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"identities": identities,
-			"count":      len(identities),
-			"caName":     ca.GetCAName(),
-		})
-	}
+// IdentityHandler routes fabric CA endpoints (register, enroll, list, ...).
+type IdentityHandler struct {
+	svc *service.IdentityService
 }
 
-// GetIdentity handles GET /identities/:id — get a single CA identity.
-func GetIdentity(ca *fabric.CAClient) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cid, _ := c.Get("correlationID")
-		name := c.Param("id")
-		id, err := ca.GetIdentity(name)
-		if err != nil {
-			slog.Error("GetIdentity failed", "name", name, "error", err, "correlation_id", cid)
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, id)
-	}
+func NewIdentityHandler(svc *service.IdentityService) *IdentityHandler {
+	return &IdentityHandler{svc: svc}
 }
 
-// RegisterIdentity handles POST /identities/register — register a new identity.
-func RegisterIdentity(ca *fabric.CAClient) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cid, _ := c.Get("correlationID")
-		var req RegisterRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if req.Type == "" {
-			req.Type = "client"
-		}
-		secret, err := ca.RegisterIdentity(req.Name, req.Type, req.Affiliation, req.Secret, req.MaxEnroll)
-		if err != nil {
-			slog.Error("RegisterIdentity failed", "name", req.Name, "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusCreated, gin.H{
-			"name":   req.Name,
-			"secret": secret,
-			"type":   req.Type,
-		})
+func (h *IdentityHandler) List(c *gin.Context) {
+	ids, err := h.svc.List(c.Request.Context())
+	if err != nil {
+		slog.Error("IdentityHandler.List failed", "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
 	}
+	response.OK(c, gin.H{
+		"identities": ids,
+		"count":      len(ids),
+		"caName":     h.svc.CAName(),
+	})
 }
 
-// EnrollIdentity handles POST /identities/enroll — enroll an identity and store cert/key.
-// Returns 409 if the identity is already enrolled (wallet entry exists).
-// To re-enroll, delete the identity first or call with force=true query param.
-func EnrollIdentity(ca *fabric.CAClient, walletPath string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cid, _ := c.Get("correlationID")
-		var req EnrollRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		walletEntry := walletPath + "/" + req.Name
-		if _, err := os.Stat(walletEntry); err == nil && c.Query("force") != "true" {
-			c.JSON(http.StatusConflict, gin.H{
-				"error":      "identity already enrolled",
-				"name":       req.Name,
-				"walletPath": walletEntry + "/msp",
-				"hint":       "add ?force=true to re-enroll and overwrite existing credentials",
-			})
-			return
-		}
-
-		enrolled, err := ca.EnrollIdentity(req.Name, req.Secret, walletPath)
-		if err != nil {
-			slog.Error("EnrollIdentity failed", "name", req.Name, "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"name":       enrolled.Name,
-			"mspID":      enrolled.MSPID,
-			"certPEM":    enrolled.CertPEM,
-			"walletPath": walletPath + "/" + req.Name + "/msp",
-		})
+func (h *IdentityHandler) Get(c *gin.Context) {
+	name := c.Param("id")
+	id, err := h.svc.Get(c.Request.Context(), name)
+	if err != nil {
+		slog.Error("IdentityHandler.Get failed", "name", name, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
 	}
+	response.OK(c, id)
 }
 
-// DeleteIdentity handles DELETE /identities/:id — remove an identity from the CA
-// and delete its local wallet entry.
-func DeleteIdentity(ca *fabric.CAClient, walletPath string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cid, _ := c.Get("correlationID")
-		name := c.Param("id")
-		if err := ca.RemoveIdentity(name, walletPath); err != nil {
-			slog.Error("RemoveIdentity failed", "name", name, "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "identity removed", "name": name})
+func (h *IdentityHandler) Register(c *gin.Context) {
+	var req RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
 	}
+	res, err := h.svc.Register(c.Request.Context(), service.RegisterIdentityInput(req))
+	if err != nil {
+		slog.Error("IdentityHandler.Register failed", "name", req.Name, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, res)
+}
+
+func (h *IdentityHandler) Enroll(c *gin.Context) {
+	var req EnrollRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	in := service.EnrollIdentityInput{Name: req.Name, Secret: req.Secret, Force: c.Query("force") == "true"}
+	res, err := h.svc.Enroll(c.Request.Context(), in)
+	if err != nil {
+		slog.Error("IdentityHandler.Enroll failed", "name", req.Name, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *IdentityHandler) Delete(c *gin.Context) {
+	name := c.Param("id")
+	if err := h.svc.Delete(c.Request.Context(), name); err != nil {
+		slog.Error("IdentityHandler.Delete failed", "name", name, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, gin.H{"message": "identity removed", "name": name})
 }

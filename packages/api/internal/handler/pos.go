@@ -1,133 +1,123 @@
 package handler
 
 import (
-	"encoding/json"
-	"fmt"
+	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/myindo/hlf-supply-chain/api/internal/service"
+	"github.com/myindo/hlf-supply-chain/api/pkg/response"
 )
 
-func CreateSale(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req CreateSaleRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if err := validateSaleID(req.ID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		itemsBytes, err := json.Marshal(req.Items)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal items"})
-			return
-		}
-
-		taxAmountStr := fmt.Sprintf("%f", req.TaxAmount)
-		if req.Currency == "" {
-			req.Currency = "IDR"
-		}
-
-		result, err := gw.SubmitTransaction("CreateSale",
-			req.ID, req.CustomerID, req.CashierID, req.CashierName,
-			string(itemsBytes), taxAmountStr, req.Currency, req.Notes)
-		if err != nil {
-			status := http.StatusInternalServerError
-			msg := err.Error()
-			if strings.Contains(msg, "already exists") {
-				status = http.StatusConflict
-			} else if strings.Contains(msg, "does not exist") || strings.Contains(msg, "not DELIVERED") ||
-				strings.Contains(msg, "not owned by") || strings.Contains(msg, "under recall") {
-				status = http.StatusBadRequest
-			} else if strings.Contains(msg, "not authorized") {
-				status = http.StatusForbidden
-			}
-			c.JSON(status, gin.H{"error": msg})
-			return
-		}
-
-		_ = result
-		c.JSON(http.StatusCreated, gin.H{"id": req.ID, "status": "created"})
-	}
+// POSHandler routes retailer POS endpoints (sale creation, inventory,
+// pre-checkout verification).
+type POSHandler struct {
+	sale *service.SaleService
+	pos  *service.POSService
 }
 
-func GetAllSales(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		customerID := c.Query("customerId")
-		if customerID != "" {
-			data, err := evalJSON(gw, "GetSalesByCustomer", customerID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.Data(http.StatusOK, "application/json", data)
-			return
-		}
+func NewPOSHandler(sale *service.SaleService, pos *service.POSService) *POSHandler {
+	return &POSHandler{sale: sale, pos: pos}
+}
 
-		ps, bm := paged(c)
-		data, err := evalJSON(gw, "GetAllSales", ps, bm)
+func (h *POSHandler) CreateSale(c *gin.Context) {
+	var req CreateSaleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if vErr := validateID("sale", req.ID); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
+	}
+	in := service.CreateSaleInput{
+		ID:          req.ID,
+		CustomerID:  req.CustomerID,
+		CashierID:   req.CashierID,
+		CashierName: req.CashierName,
+		Items:       toServiceSaleItems(req.Items),
+		TaxAmount:   req.TaxAmount,
+		Currency:    req.Currency,
+		Notes:       req.Notes,
+	}
+	res, err := h.sale.Create(c.Request.Context(), in)
+	if err != nil {
+		slog.Error("POSHandler.CreateSale failed", "id", req.ID, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, gin.H{"id": res.ID, "status": "created"})
+}
+
+func (h *POSHandler) ListSales(c *gin.Context) {
+	customerID := c.Query("customerId")
+	if customerID != "" {
+		data, err := h.sale.ListByCustomer(c.Request.Context(), customerID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			slog.Error("POSHandler.ListSales(byCustomer) failed", "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+			response.Error(c, err)
 			return
 		}
 		c.Data(http.StatusOK, "application/json", data)
+		return
 	}
+	ps, bm := paged(c)
+	data, err := h.sale.List(c.Request.Context(), ps, bm)
+	if err != nil {
+		slog.Error("POSHandler.ListSales failed", "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/json", data)
 }
 
-func GetSale(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-		if err := validateSaleID(id); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		data, err := evalJSON(gw, "ReadSale", id)
-		if err != nil {
-			if strings.Contains(err.Error(), "does not exist") {
-				c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("sale %s not found", id)})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.Data(http.StatusOK, "application/json", data)
+func (h *POSHandler) GetSale(c *gin.Context) {
+	id := c.Param("id")
+	if vErr := validateID("sale", id); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
 	}
+	data, err := h.sale.Get(c.Request.Context(), id)
+	if err != nil {
+		slog.Error("POSHandler.GetSale failed", "id", id, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/json", data)
 }
 
-func GetInventory(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ownerMSP := c.DefaultQuery("ownerMsp", "Org3MSP")
-		data, err := evalJSON(gw, "GetInventory", ownerMSP)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.Data(http.StatusOK, "application/json", data)
+func (h *POSHandler) Inventory(c *gin.Context) {
+	ownerMSP := c.DefaultQuery("ownerMsp", "Org3MSP")
+	data, err := h.pos.Inventory(c.Request.Context(), ownerMSP)
+	if err != nil {
+		slog.Error("POSHandler.Inventory failed", "ownerMsp", ownerMSP, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
 	}
+	c.Data(http.StatusOK, "application/json", data)
 }
 
-func VerifyProduct(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-		if err := validateProductID(id); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		data, err := evalJSON(gw, "GetProvenance", id)
-		if err != nil {
-			if strings.Contains(err.Error(), "does not exist") {
-				c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("product %s not found", id)})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.Data(http.StatusOK, "application/json", data)
+func (h *POSHandler) VerifyProduct(c *gin.Context) {
+	id := c.Param("id")
+	if vErr := validateID("product", id); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
 	}
+	data, err := h.pos.VerifyProduct(c.Request.Context(), id)
+	if err != nil {
+		slog.Error("POSHandler.VerifyProduct failed", "id", id, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/json", data)
+}
+
+// toServiceSaleItems converts the handler-facing item type into the
+// service-layer type. Field names match, so it's a straight copy.
+func toServiceSaleItems(in []SaleItemRequest) []service.SaleItemInput {
+	out := make([]service.SaleItemInput, len(in))
+	for i, it := range in {
+		out[i] = service.SaleItemInput(it)
+	}
+	return out
 }

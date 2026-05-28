@@ -3,67 +3,57 @@ package handler
 import (
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/myindo/hlf-supply-chain/api/internal/service"
+	"github.com/myindo/hlf-supply-chain/api/pkg/response"
 )
 
-func IssueRecall(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req IssueRecallRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		targetJSON, err := jsonMarshal(req.TargetIDs)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid targetIds"})
-			return
-		}
-		cid, _ := c.Get("correlationID")
-		_, err = gw.SubmitTransaction("IssueRecall",
-			req.ID, req.Scope, targetJSON, req.Reason,
-			req.Severity, req.IssuedByName, req.InstructionsURL)
-		if err != nil {
-			slog.Error("IssueRecall failed", "id", req.ID, "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue recall"})
-			return
-		}
-		c.JSON(http.StatusCreated, gin.H{"message": "recall issued", "id": req.ID})
-	}
+// RecallHandler routes recall HTTP endpoints.
+type RecallHandler struct {
+	svc *service.RecallService
 }
 
-func ReadRecall(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-		if err := validateID("recall", id); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		cid, _ := c.Get("correlationID")
-		result, err := evalJSON(gw, "ReadRecall", id)
-		if err != nil {
-			slog.Error("ReadRecall failed", "id", id, "error", err, "correlation_id", cid)
-			if strings.Contains(err.Error(), "does not exist") {
-				c.JSON(http.StatusNotFound, gin.H{"error": "recall not found"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve recall"})
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	}
+func NewRecallHandler(svc *service.RecallService) *RecallHandler {
+	return &RecallHandler{svc: svc}
 }
 
-func GetRecalledProducts(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cid, _ := c.Get("correlationID")
-		result, err := evalJSON(gw, "GetRecalledProducts")
-		if err != nil {
-			slog.Error("GetRecalledProducts failed", "error", err, "correlation_id", cid)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve recalled products"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"products": result})
+func (h *RecallHandler) Issue(c *gin.Context) {
+	var req IssueRecallRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
 	}
+	res, err := h.svc.Issue(c.Request.Context(), service.IssueRecallInput(req))
+	if err != nil {
+		slog.Error("RecallHandler.Issue failed", "id", req.ID, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.Created(c, gin.H{"message": "recall issued", "id": res.ID})
+}
+
+func (h *RecallHandler) Get(c *gin.Context) {
+	id := c.Param("id")
+	if vErr := validateID("recall", id); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
+	}
+	result, err := h.svc.Get(c.Request.Context(), id)
+	if err != nil {
+		slog.Error("RecallHandler.Get failed", "id", id, "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/json", result)
+}
+
+func (h *RecallHandler) RecalledProducts(c *gin.Context) {
+	result, err := h.svc.RecalledProducts(c.Request.Context())
+	if err != nil {
+		slog.Error("RecallHandler.RecalledProducts failed", "error", err.Detail, "correlation_id", c.GetString("correlationID"))
+		response.Error(c, err)
+		return
+	}
+	response.OK(c, gin.H{"products": result})
 }

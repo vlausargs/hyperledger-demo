@@ -5,204 +5,193 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/myindo/hlf-supply-chain/api/internal/fabric"
+	"github.com/myindo/hlf-supply-chain/api/internal/service"
+	"github.com/myindo/hlf-supply-chain/api/pkg/response"
 )
 
-func GetChannels(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"channels": []gin.H{
-				{"channel_id": gw.GetChannel(), "status": "active"},
+// NetworkHandler routes channel/chaincode/peer topology endpoints.
+type NetworkHandler struct {
+	svc *service.NetworkService
+}
+
+func NewNetworkHandler(svc *service.NetworkService) *NetworkHandler {
+	return &NetworkHandler{svc: svc}
+}
+
+func (h *NetworkHandler) Channels(c *gin.Context) {
+	response.OK(c, gin.H{
+		"channels": []gin.H{
+			{"channel_id": h.svc.ChannelID(), "status": "active"},
+		},
+	})
+}
+
+func (h *NetworkHandler) ChannelInfo(c *gin.Context) {
+	channelID := c.Param("channelId")
+	if vErr := validateID("channel", channelID); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
+	}
+	if channelID != h.svc.ChannelID() {
+		response.NotFound(c, "Channel not found")
+		return
+	}
+	response.OK(c, gin.H{
+		"channel_id": channelID,
+		"status":     "active",
+		"chaincode":  h.svc.ChaincodeID(),
+	})
+}
+
+func (h *NetworkHandler) Chaincodes(c *gin.Context) {
+	response.OK(c, gin.H{
+		"chaincodes": []gin.H{
+			{
+				"name":    h.svc.ChaincodeID(),
+				"version": "3.0",
+				"channel": h.svc.ChannelID(),
+				"status":  "active",
 			},
-		})
-	}
+		},
+	})
 }
 
-func GetChannelInfo(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		channelID := c.Param("channelId")
-		if err := validateID("channel", channelID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if channelID != gw.GetChannel() {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"channel_id": channelID,
-			"status":     "active",
-			"chaincode":  gw.GetChaincode(),
-		})
+func (h *NetworkHandler) ChaincodeInfo(c *gin.Context) {
+	chaincodeID := c.Param("chaincodeId")
+	if vErr := validateID("chaincode", chaincodeID); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
 	}
+	if chaincodeID != h.svc.ChaincodeID() {
+		response.NotFound(c, "Chaincode not found")
+		return
+	}
+	response.OK(c, gin.H{
+		"name":     chaincodeID,
+		"version":  "3.0",
+		"channel":  h.svc.ChannelID(),
+		"status":   "active",
+		"language": "golang",
+		"domain":   "supply-chain",
+	})
 }
 
-func GetChaincodes(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"chaincodes": []gin.H{
-				{
-					"name":    gw.GetChaincode(),
-					"version": "3.0",
-					"channel": gw.GetChannel(),
-					"status":  "active",
-				},
-			},
-		})
+func (h *NetworkHandler) Peers(c *gin.Context) {
+	cp, err := h.svc.Profile(c.Request.Context())
+	if err != nil {
+		response.Error(c, err)
+		return
 	}
-}
-
-func GetChaincodeInfo(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		chaincodeID := c.Param("chaincodeId")
-		if err := validateID("chaincode", chaincodeID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if chaincodeID != gw.GetChaincode() {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Chaincode not found"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"name":     chaincodeID,
-			"version":  "3.0",
-			"channel":  gw.GetChannel(),
-			"status":   "active",
-			"language": "golang",
-			"domain":   "supply-chain",
-		})
-	}
-}
-
-func GetPeers(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cp := gw.GetConnectionProfile()
-		if cp == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "connection profile not loaded"})
-			return
-		}
-		var peers []gin.H
-		for name, peer := range cp.Peers {
-			peers = append(peers, gin.H{"name": name, "address": peer.URL})
-		}
-		c.JSON(http.StatusOK, gin.H{"peers": peers})
-	}
-}
-
-func GetOrganizations(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		cp := gw.GetConnectionProfile()
-		if cp == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "connection profile not loaded"})
-			return
-		}
-		var orgs []gin.H
-		for name, org := range cp.Organizations {
-			orgs = append(orgs, gin.H{"name": name, "mspid": org.MSPID, "peers": org.Peers})
-		}
-		c.JSON(http.StatusOK, gin.H{"organizations": orgs})
-	}
-}
-
-func GetConnectionProfile(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		connProfile := gw.GetConnectionProfile()
-		if connProfile == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Connection profile not loaded",
-			})
-			return
-		}
-
-		orgName := connProfile.Client.Organization
-		org, orgExists := connProfile.Organizations[orgName]
-
-		response := gin.H{
-			"profile": gin.H{
-				"name":    connProfile.Name,
-				"version": connProfile.Version,
-			},
-			"client": gin.H{
-				"organization": connProfile.Client.Organization,
-			},
-			"organizations": connProfile.Organizations,
-			"peers": gin.H{
-				"count": len(connProfile.Peers),
-				"list":  getPeerInfo(connProfile),
-			},
-			"certificateAuthorities": gin.H{
-				"count": len(connProfile.CAs),
-				"list":  getCAInfo(connProfile),
-			},
-		}
-
-		if orgExists {
-			response["currentOrganization"] = gin.H{
-				"name":  orgName,
-				"mspid": org.MSPID,
-				"peers": org.Peers,
-				"cas":   org.CertificateAuthorities,
-			}
-		}
-
-		c.JSON(http.StatusOK, response)
-	}
-}
-
-func GetTransactions(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "transaction history query not supported by Fabric Gateway SDK"})
-	}
-}
-
-func GetTransaction(gw FabricGateway) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		txID := c.Param("txId")
-		if err := validateID("transaction", txID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "transaction lookup not supported by Fabric Gateway SDK"})
-	}
-}
-
-// getPeerInfo extracts peer information from connection profile
-func getPeerInfo(cp *fabric.ConnectionProfile) []gin.H {
 	var peers []gin.H
 	for name, peer := range cp.Peers {
-		peerInfo := gin.H{
+		peers = append(peers, gin.H{"name": name, "address": peer.URL})
+	}
+	response.OK(c, gin.H{"peers": peers})
+}
+
+func (h *NetworkHandler) Organizations(c *gin.Context) {
+	cp, err := h.svc.Profile(c.Request.Context())
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	var orgs []gin.H
+	for name, org := range cp.Organizations {
+		orgs = append(orgs, gin.H{"name": name, "mspid": org.MSPID, "peers": org.Peers})
+	}
+	response.OK(c, gin.H{"organizations": orgs})
+}
+
+func (h *NetworkHandler) ConnectionProfile(c *gin.Context) {
+	cp, err := h.svc.Profile(c.Request.Context())
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	orgName := cp.Client.Organization
+	org, orgExists := cp.Organizations[orgName]
+
+	resp := gin.H{
+		"profile": gin.H{
+			"name":    cp.Name,
+			"version": cp.Version,
+		},
+		"client": gin.H{
+			"organization": cp.Client.Organization,
+		},
+		"organizations": cp.Organizations,
+		"peers": gin.H{
+			"count": len(cp.Peers),
+			"list":  peerInfo(cp),
+		},
+		"certificateAuthorities": gin.H{
+			"count": len(cp.CAs),
+			"list":  caInfo(cp),
+		},
+	}
+	if orgExists {
+		resp["currentOrganization"] = gin.H{
+			"name":  orgName,
+			"mspid": org.MSPID,
+			"peers": org.Peers,
+			"cas":   org.CertificateAuthorities,
+		}
+	}
+	response.OK(c, resp)
+}
+
+func (h *NetworkHandler) Transactions(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{"error": "transaction history query not supported by Fabric Gateway SDK"})
+}
+
+func (h *NetworkHandler) Transaction(c *gin.Context) {
+	txID := c.Param("txId")
+	if vErr := validateID("transaction", txID); vErr != nil {
+		response.BadRequest(c, vErr.Error())
+		return
+	}
+	c.JSON(http.StatusNotImplemented, gin.H{"error": "transaction lookup not supported by Fabric Gateway SDK"})
+}
+
+// peerInfo extracts peer information from connection profile (used by
+// /network/connection-profile only).
+func peerInfo(cp *fabric.ConnectionProfile) []gin.H {
+	var peers []gin.H
+	for name, peer := range cp.Peers {
+		p := gin.H{
 			"name": name,
 			"url":  peer.URL,
 		}
 		if peer.TLSCACerts.Pem != "" {
-			peerInfo["hasTLSCert"] = true
-			peerInfo["tlsCertLength"] = len(peer.TLSCACerts.Pem)
+			p["hasTLSCert"] = true
+			p["tlsCertLength"] = len(peer.TLSCACerts.Pem)
 		} else {
-			peerInfo["hasTLSCert"] = false
+			p["hasTLSCert"] = false
 		}
 		if peer.GRPCOptions != nil {
-			peerInfo["grpcOptions"] = peer.GRPCOptions
+			p["grpcOptions"] = peer.GRPCOptions
 		}
-		peers = append(peers, peerInfo)
+		peers = append(peers, p)
 	}
 	return peers
 }
 
-// getCAInfo extracts CA information from connection profile
-func getCAInfo(cp *fabric.ConnectionProfile) []gin.H {
+// caInfo extracts CA information from connection profile.
+func caInfo(cp *fabric.ConnectionProfile) []gin.H {
 	var cas []gin.H
 	for name, ca := range cp.CAs {
-		caInfo := gin.H{
+		info := gin.H{
 			"name":   name,
 			"url":    ca.URL,
 			"caName": ca.CAName,
 		}
 		if ca.TLSCACerts.Pem != "" {
-			caInfo["hasTLSCert"] = true
-			caInfo["tlsCertLength"] = len(ca.TLSCACerts.Pem)
+			info["hasTLSCert"] = true
+			info["tlsCertLength"] = len(ca.TLSCACerts.Pem)
 		} else {
-			caInfo["hasTLSCert"] = false
+			info["hasTLSCert"] = false
 		}
-		cas = append(cas, caInfo)
+		cas = append(cas, info)
 	}
 	return cas
 }
