@@ -21,6 +21,13 @@ func (c *SaleContract) CreateSale(ctx contractapi.TransactionContextInterface,
 	if err := validation.ValidateID(id); err != nil {
 		return err
 	}
+	for _, f := range []struct{ name, value string }{
+		{"cashierID", cashierID}, {"cashierName", cashierName}, {"itemsJSON", itemsJSON},
+	} {
+		if err := validation.ValidateRequired(f.name, f.value); err != nil {
+			return err
+		}
+	}
 	caller, err := ledger.RequireMSP(ctx, "Org3MSP")
 	if err != nil {
 		return err
@@ -66,6 +73,9 @@ func (c *SaleContract) CreateSale(ctx contractapi.TransactionContextInterface,
 		}
 		if p.RecallID != "" {
 			return fmt.Errorf("product %s is under recall %s", item.ProductID, p.RecallID)
+		}
+		if err := validation.ValidateProductStatusTransition(p.Status, models.ProductStatusSold); err != nil {
+			return err
 		}
 
 		p.Status = models.ProductStatusSold

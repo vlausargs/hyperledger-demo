@@ -7,6 +7,7 @@ import (
 	"github.com/hyperledger/fabric-contract-api-go/v2/contractapi"
 	"github.com/myindo/hlf-supply-chain/chaincode/ledger"
 	"github.com/myindo/hlf-supply-chain/chaincode/models"
+	"github.com/myindo/hlf-supply-chain/chaincode/validation"
 )
 
 type CustodyContract struct {
@@ -40,6 +41,14 @@ func (c *CustodyContract) findPendingCustody(ctx contractapi.TransactionContextI
 
 func (c *CustodyContract) InitiateCustodyTransfer(ctx contractapi.TransactionContextInterface,
 	shipmentID, toMSP, toName, conditions string) error {
+
+	for _, f := range []struct{ name, value string }{
+		{"shipmentID", shipmentID}, {"toMSP", toMSP}, {"toName", toName},
+	} {
+		if err := validation.ValidateRequired(f.name, f.value); err != nil {
+			return err
+		}
+	}
 
 	var ship models.Shipment
 	if err := store.GetByID(ctx, models.PrefixShipment+shipmentID, &ship); err != nil {
@@ -124,12 +133,18 @@ func (c *CustodyContract) AcceptCustodyTransfer(ctx contractapi.TransactionConte
 
 	// Check if receiver is the final destination
 	if pending.ToMSP == ship.ReceiverMSP {
+		if err := validation.ValidateShipmentStatusTransition(ship.Status, models.ShipmentStatusDelivered); err != nil {
+			return err
+		}
 		ship.Status = models.ShipmentStatusDelivered
 		ship.ArrivalAt = now
 		// Update all products: delivered
 		for _, pid := range ship.ProductIDs {
 			var p models.Product
 			if err := store.GetByID(ctx, models.PrefixProduct+pid, &p); err != nil {
+				return err
+			}
+			if err := validation.ValidateProductStatusTransition(p.Status, models.ProductStatusDelivered); err != nil {
 				return err
 			}
 			p.CurrentOwnerMSP = pending.ToMSP

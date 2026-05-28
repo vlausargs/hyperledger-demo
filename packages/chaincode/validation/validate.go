@@ -40,8 +40,9 @@ func ValidateProductStatusTransition(from, to string) error {
 }
 
 var shipmentTransitions = map[string]map[string]bool{
-	"DRAFT":      {"IN_TRANSIT": true, "CANCELLED": true},
+	"DRAFT":      {"IN_TRANSIT": true, "CANCELLED": true, "RECALLED": true},
 	"IN_TRANSIT": {"DELIVERED": true, "RECALLED": true},
+	"DELIVERED":  {"RECALLED": true},
 }
 
 func ValidateShipmentStatusTransition(from, to string) error {

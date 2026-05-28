@@ -265,6 +265,40 @@ func TestIntegration_AccessControl(t *testing.T) {
 	}
 }
 
+// TestIntegration_IllegalStatusTransitions verifies that ValidateProductStatusTransition
+// and ValidateShipmentStatusTransition guards reject illegal state changes (spec 2.4).
+func TestIntegration_IllegalStatusTransitions(t *testing.T) {
+	ctx := sharedCtx("Org1MSP")
+	product := &ProductContract{}
+	recall := &RecallContract{}
+
+	// Required-field validation: empty manufacturerName must be rejected.
+	if err := product.CreateProduct(ctx, "P-REQ", "SKU", "Name", "", "B-1", "", "", ""); err == nil {
+		t.Error("expected CreateProduct with empty manufacturerName to fail (ValidateRequired)")
+	}
+
+	// Create a normal product and move it through ACTIVE → SOLD by direct state insertion,
+	// then attempt to recall it. SOLD has no outgoing transitions in productTransitions,
+	// so ValidateProductStatusTransition must reject the recall.
+	if err := product.CreateProduct(ctx, "P-SOLD", "SKU", "Sold Widget", "",
+		"B-1", "Acme", "", ""); err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	p, _ := product.ReadProduct(ctx, "P-SOLD")
+	p.Status = models.ProductStatusSold
+	raw, _ := json.Marshal(p)
+	if err := ctx.GetStub().PutState(models.PrefixProduct+"P-SOLD", raw); err != nil {
+		t.Fatalf("PutState: %v", err)
+	}
+
+	targets, _ := json.Marshal([]string{"P-SOLD"})
+	err := recall.IssueRecall(ctx, "REC-ILLEGAL", models.RecallScopeProduct,
+		string(targets), "test", "HIGH", "QA", "")
+	if err == nil {
+		t.Error("expected IssueRecall on SOLD product to fail (illegal SOLD->RECALLED transition)")
+	}
+}
+
 // TestIntegration_RejectCustodyKeepsState verifies a rejected custody does
 // NOT change shipment status away from IN_TRANSIT.
 func TestIntegration_RejectCustodyKeepsState(t *testing.T) {

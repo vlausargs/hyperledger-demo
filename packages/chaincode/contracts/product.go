@@ -20,6 +20,14 @@ func (c *ProductContract) CreateProduct(ctx contractapi.TransactionContextInterf
 	if err := validation.ValidateID(id); err != nil {
 		return err
 	}
+	for _, f := range []struct{ name, value string }{
+		{"sku", sku}, {"name", name}, {"batchId", batchID},
+		{"manufacturerName", manufacturerName},
+	} {
+		if err := validation.ValidateRequired(f.name, f.value); err != nil {
+			return err
+		}
+	}
 	caller, err := ledger.RequireMSP(ctx, "Org1MSP")
 	if err != nil {
 		return err

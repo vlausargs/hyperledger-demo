@@ -20,6 +20,13 @@ func (c *ShipmentContract) CreateShipment(ctx contractapi.TransactionContextInte
 	if err := validation.ValidateID(id); err != nil {
 		return err
 	}
+	for _, f := range []struct{ name, value string }{
+		{"name", name}, {"receiverMSP", receiverMSP}, {"receiverName", receiverName},
+	} {
+		if err := validation.ValidateRequired(f.name, f.value); err != nil {
+			return err
+		}
+	}
 	caller, err := ledger.CallerMSPID(ctx)
 	if err != nil {
 		return err
@@ -63,6 +70,9 @@ func (c *ShipmentContract) CreateShipment(ctx contractapi.TransactionContextInte
 	for _, pid := range productIDs {
 		var p models.Product
 		_ = store.GetByID(ctx, models.PrefixProduct+pid, &p)
+		if err := validation.ValidateProductStatusTransition(p.Status, models.ProductStatusShipped); err != nil {
+			return err
+		}
 		p.CurrentShipmentID = id
 		p.Status = models.ProductStatusShipped
 		p.UpdatedAt = now
@@ -103,6 +113,9 @@ func (c *ShipmentContract) DispatchShipment(ctx contractapi.TransactionContextIn
 	}
 	if ship.Status != models.ShipmentStatusDraft {
 		return fmt.Errorf("shipment %s is not in DRAFT status (current: %s)", id, ship.Status)
+	}
+	if err := validation.ValidateShipmentStatusTransition(ship.Status, models.ShipmentStatusInTransit); err != nil {
+		return err
 	}
 	now, err := ledger.TxTimestamp(ctx)
 	if err != nil {

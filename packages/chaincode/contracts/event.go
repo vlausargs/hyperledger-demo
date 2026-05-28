@@ -20,6 +20,13 @@ func (c *EventContract) LogEvent(ctx contractapi.TransactionContextInterface,
 	if err := validation.ValidateID(id); err != nil {
 		return err
 	}
+	for _, f := range []struct{ name, value string }{
+		{"targetID", targetID}, {"targetType", targetType}, {"eventType", eventType},
+	} {
+		if err := validation.ValidateRequired(f.name, f.value); err != nil {
+			return err
+		}
+	}
 	caller, err := ledger.CallerMSPID(ctx)
 	if err != nil {
 		return err

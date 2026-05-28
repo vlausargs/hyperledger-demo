@@ -20,6 +20,13 @@ func (c *RecallContract) IssueRecall(ctx contractapi.TransactionContextInterface
 	if err := validation.ValidateID(id); err != nil {
 		return err
 	}
+	for _, f := range []struct{ name, value string }{
+		{"scope", scope}, {"reason", reason}, {"severity", severity}, {"issuedByName", issuedByName},
+	} {
+		if err := validation.ValidateRequired(f.name, f.value); err != nil {
+			return err
+		}
+	}
 	caller, err := ledger.CallerMSPID(ctx)
 	if err != nil {
 		return err
@@ -46,6 +53,9 @@ func (c *RecallContract) IssueRecall(ctx contractapi.TransactionContextInterface
 			if err := store.GetByID(ctx, models.PrefixProduct+pid, &p); err != nil {
 				return err
 			}
+			if err := validation.ValidateProductStatusTransition(p.Status, models.ProductStatusRecalled); err != nil {
+				return err
+			}
 			p.Status = models.ProductStatusRecalled
 			p.RecallID = id
 			p.UpdatedAt = now
@@ -60,6 +70,9 @@ func (c *RecallContract) IssueRecall(ctx contractapi.TransactionContextInterface
 			if err := store.GetByID(ctx, models.PrefixShipment+sid, &ship); err != nil {
 				return err
 			}
+			if err := validation.ValidateShipmentStatusTransition(ship.Status, models.ShipmentStatusRecalled); err != nil {
+				return err
+			}
 			ship.Status = models.ShipmentStatusRecalled
 			ship.RecallID = id
 			ship.UpdatedAt = now
@@ -70,6 +83,9 @@ func (c *RecallContract) IssueRecall(ctx contractapi.TransactionContextInterface
 			for _, pid := range ship.ProductIDs {
 				var p models.Product
 				if err := store.GetByID(ctx, models.PrefixProduct+pid, &p); err != nil {
+					return err
+				}
+				if err := validation.ValidateProductStatusTransition(p.Status, models.ProductStatusRecalled); err != nil {
 					return err
 				}
 				p.Status = models.ProductStatusRecalled
@@ -90,6 +106,9 @@ func (c *RecallContract) IssueRecall(ctx contractapi.TransactionContextInterface
 				return err
 			}
 			for _, p := range products {
+				if err := validation.ValidateProductStatusTransition(p.Status, models.ProductStatusRecalled); err != nil {
+					return err
+				}
 				p.Status = models.ProductStatusRecalled
 				p.RecallID = id
 				p.UpdatedAt = now
