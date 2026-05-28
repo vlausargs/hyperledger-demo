@@ -1,0 +1,68 @@
+# Dependabot config: weekly security + version PRs across every package and
+# the Dockerfiles. github-actions updates land at the repo root.
+version: 2
+updates:
+  # ---- Go modules ----
+  - package-ecosystem: gomod
+    directory: /packages/api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - go
+
+  - package-ecosystem: gomod
+    directory: /packages/chaincode
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - go
+
+  - package-ecosystem: gomod
+    directory: /infra/configloader
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - go
+
+  # ---- npm / pnpm ----
+  - package-ecosystem: npm
+    directory: /packages/web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - javascript
+
+  - package-ecosystem: npm
+    directory: /pos-app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - javascript
+
+  # ---- GitHub Actions ----
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - ci
+
+  # ---- Docker images ----
+  - package-ecosystem: docker
+    directory: /infra/docker/Dockerfiles
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - docker

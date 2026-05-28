@@ -1,0 +1,114 @@
+name: Deploy
+
+# Deploys the latest GHCR images to a target host over SSH.
+#
+# Required repository secrets:
+#   SSH_HOST       - target server hostname or IP
+#   SSH_USER       - SSH user on the target server
+#   SSH_KEY        - private SSH key (PEM) authorised on the target
+#   API_URL        - public URL used for smoke-testing the API (e.g. https://api.example.com)
+#   WEB_URL        - public URL used for smoke-testing the web app
+#
+# Optional:
+#   SLACK_WEBHOOK  - Slack incoming webhook URL; when set, notify job posts deploy status
+#   GHCR_USER      - if pulling private images, the GHCR username on the target
+#   GHCR_TOKEN     - matching GHCR read token
+#
+# Triggers: manual dispatch (pick environment) or GitHub Release published.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  pull-and-restart:
+    name: Pull & restart (${{ inputs.environment || 'production' }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd ~/hlf-demo
+            git fetch --all --tags
+            git checkout ${{ github.sha }} || git checkout main
+            # Optional private GHCR login on the target host.
+            if [ -n "${{ secrets.GHCR_USER }}" ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
+              echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
+                -u "${{ secrets.GHCR_USER }}" --password-stdin
+            fi
+            docker compose \
+              -f infra/docker/compose.api.yml \
+              -f infra/docker/compose.web.yml \
+              -f infra/docker/compose.proxy.yml \
+              pull
+            docker compose \
+              -f infra/docker/compose.api.yml \
+              -f infra/docker/compose.web.yml \
+              -f infra/docker/compose.proxy.yml \
+              up -d --force-recreate
+
+  smoke-test:
+    name: Smoke tests
+    needs: [pull-and-restart]
+    runs-on: ubuntu-latest
+    steps:
+      - name: API /health
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            "${{ secrets.API_URL }}/health")
+          echo "API /health -> $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "API health check failed"
+            exit 1
+          fi
+      - name: Web root
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            "${{ secrets.WEB_URL }}/")
+          echo "Web / -> $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "Web smoke check failed"
+            exit 1
+          fi
+
+  notify:
+    name: Notify (Slack)
+    needs: [smoke-test]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    env:
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+    steps:
+      - name: Post to Slack
+        # Skip silently when no webhook is configured.
+        if: ${{ env.SLACK_WEBHOOK != '' }}
+        run: |
+          STATUS="${{ needs.smoke-test.result }}"
+          ENV="${{ inputs.environment || 'production' }}"
+          COLOR="good"
+          if [ "$STATUS" != "success" ]; then COLOR="danger"; fi
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"attachments\":[{\"color\":\"$COLOR\",\"text\":\"Deploy to *$ENV* finished: $STATUS (sha ${{ github.sha }})\"}]}" \
+            "$SLACK_WEBHOOK"

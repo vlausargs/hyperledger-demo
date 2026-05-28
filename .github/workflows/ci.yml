@@ -6,52 +6,126 @@ on:
   push:
     branches: [main]
 
+# Run all jobs in parallel; PR blocked until everything passes.
+# fail-fast off so devs see all failures at once, not just the first.
 jobs:
   chaincode:
-    name: Chaincode
+    name: Chaincode (lint + test + vuln)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-      - name: Lint
+          cache-dependency-path: packages/chaincode/go.sum
+      - name: go vet
         working-directory: packages/chaincode
         run: go vet ./...
-      - name: Test
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: packages/chaincode
+          args: --config=${{ github.workspace }}/.golangci.yml
+      - name: Test (-race -cover)
         working-directory: packages/chaincode
         run: go test ./... -race -cover -coverprofile=coverage.out
-      - name: Check coverage
+      - name: Coverage report
         working-directory: packages/chaincode
         run: go tool cover -func=coverage.out
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: govulncheck
+        working-directory: packages/chaincode
+        run: govulncheck ./...
 
   api:
-    name: API
+    name: API (lint + test + vuln)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - name: Lint
+          cache-dependency-path: packages/api/go.sum
+      - name: go vet
         working-directory: packages/api
         run: go vet ./...
-      - name: Test
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: packages/api
+          args: --config=${{ github.workspace }}/.golangci.yml
+      - name: Test (-race -cover)
         working-directory: packages/api
         run: go test ./... -race -cover -coverprofile=coverage.out
-      - name: Check coverage
+      - name: Coverage report
         working-directory: packages/api
         run: go tool cover -func=coverage.out
-      - name: Build
+      - name: Build server
         working-directory: packages/api
         run: go build ./cmd/server
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: govulncheck
+        working-directory: packages/api
+        run: govulncheck ./...
 
-  shellcheck:
-    name: Shell Scripts
+  web:
+    name: Web (lint + check + test + build + audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: packages/web/pnpm-lock.yaml
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Lint (eslint)
+        run: pnpm lint
+      - name: Type-check (svelte-check)
+        run: pnpm check
+      - name: Test (vitest)
+        # Skip cleanly when there are no test files yet.
+        run: |
+          if find src -type f \( -name '*.test.ts' -o -name '*.spec.ts' -o -name '*.test.js' -o -name '*.spec.js' \) | grep -q .; then
+            pnpm exec vitest run --passWithNoTests
+          else
+            echo "No test files found, skipping."
+          fi
+      - name: Build
+        run: pnpm build
+      - name: pnpm audit (high+)
+        run: pnpm audit --audit-level=high
+        continue-on-error: false
+
+  infra:
+    name: Infra (shellcheck)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install shellcheck
-        run: sudo apt-get install -y shellcheck
-      - name: Check scripts
-        run: find fabric-network/scripts -name '*.sh' -exec shellcheck -e SC1091 -e SC2034 {} +
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run shellcheck on all .sh
+        run: |
+          mapfile -t files < <(find . -type f -name '*.sh' \
+            -not -path './node_modules/*' \
+            -not -path './*/node_modules/*' \
+            -not -path './packages/web/node_modules/*' \
+            -not -path './pos-app/node_modules/*' \
+            -not -path './.git/*')
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No shell scripts found"
+            exit 0
+          fi
+          printf '%s\n' "${files[@]}"
+          shellcheck -e SC1091 -e SC2034 "${files[@]}"
