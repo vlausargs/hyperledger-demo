@@ -1,0 +1,98 @@
+{{- if .Values.orderer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fabric.fullname" . }}-orderer
+  labels:
+    {{- include "fabric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orderer
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.orderer.service.port }}
+      targetPort: grpc
+      name: grpc
+    - port: {{ .Values.orderer.service.adminPort }}
+      targetPort: admin
+      name: admin
+    - port: {{ .Values.orderer.service.operationsPort }}
+      targetPort: operations
+      name: operations
+  selector:
+    {{- include "fabric.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: orderer
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fabric.fullname" . }}-peer
+  labels:
+    {{- include "fabric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: peer
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.peers.service.port }}
+      targetPort: grpc
+      name: grpc
+    - port: {{ .Values.peers.service.chaincodePort }}
+      targetPort: chaincode
+      name: chaincode
+  selector:
+    {{- include "fabric.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: peer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fabric.fullname" . }}-couchdb
+  labels:
+    {{- include "fabric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: couchdb
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.couchdb.service.port }}
+      targetPort: http
+      name: http
+  selector:
+    {{- include "fabric.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: couchdb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fabric.fullname" . }}-ca
+  labels:
+    {{- include "fabric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ca
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.ca.service.port }}
+      targetPort: http
+      name: http
+  selector:
+    {{- include "fabric.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fabric.fullname" . }}-postgres
+  labels:
+    {{- include "fabric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.postgres.service.port }}
+      targetPort: pg
+      name: pg
+  selector:
+    {{- include "fabric.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres

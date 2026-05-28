@@ -1,0 +1,17 @@
+{{- if and .Values.orderer.enabled .Values.orderer.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "fabric.fullname" . }}-orderer
+  labels:
+    {{- include "fabric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orderer
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.global.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.orderer.persistence.size }}
+{{- end }}

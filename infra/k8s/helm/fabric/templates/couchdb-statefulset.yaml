@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fabric.fullname" . }}-couchdb
+  labels:
+    {{- include "fabric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: couchdb
+spec:
+  serviceName: {{ include "fabric.fullname" . }}-couchdb
+  replicas: {{ .Values.couchdb.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fabric.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: couchdb
+  template:
+    metadata:
+      labels:
+        {{- include "fabric.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: couchdb
+    spec:
+      containers:
+        - name: couchdb
+          image: "{{ .Values.couchdb.image.repository }}:{{ .Values.couchdb.image.tag }}"
+          imagePullPolicy: {{ .Values.couchdb.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.couchdb.service.port }}
+          env:
+            - name: COUCHDB_USER
+              value: {{ .Values.couchdb.auth.username | quote }}
+            - name: COUCHDB_PASSWORD
+              value: {{ .Values.couchdb.auth.password | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/couchdb/data
+  {{- if .Values.couchdb.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.global.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.couchdb.persistence.size }}
+  {{- end }}
