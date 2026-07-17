@@ -79,7 +79,51 @@ Also note: this plugin version has no `kubectl hlf ca list` subcommand; use
 
 Makefile target: `make kind-cas`.
 
-## Task 3: Orderer node (pending)
+## Task 3: Orderer node (DONE)
+
+Registers an `orderer` identity (type `orderer`, MSP `OrdererMSP`) at
+`ord-ca`, then creates `orderer0` (Fabric orderer 2.5.15, storage class
+`standard`, 1Gi):
+
+```bash
+bash infra/k8s/operator/scripts/20-orderer.sh
+```
+
+Verify:
+
+```bash
+kubectl -n hlf wait --for=condition=ready pod -l app=hlf-ordnode --timeout=300s
+kubectl -n hlf get pods -l app=hlf-ordnode
+kubectl -n hlf get fabricorderernodes.hlf.kungfusoftware.es
+```
+
+Expected: `orderer0` pod `Running` `1/1`, `FabricOrdererNode` `orderer0` in
+state `RUNNING`.
+
+Notes:
+
+- Same as Task 2, the brief's `--hosts=orderer0.localho.st` flag on
+  `ordnode create` is dropped — no Istio on this cluster, and `--hosts`
+  would leave the resource `FAILED`. In-cluster reachability
+  (`orderer0.hlf:7050`, needed by later channel tasks) comes from the
+  operator's plain Kubernetes `Service` regardless.
+- `ord-ca`'s TLS serving certificate only carries SANs
+  `localhost`/`ord-ca`/`ord-ca.hlf`/`127.0.0.1` (Task 2's dropped `--hosts`
+  controls Istio provisioning only, not the cert SAN list). Both
+  `kubectl hlf ca register` (run from the host) and the in-cluster operator
+  reconciling `ordnode create` auto-discover the CA via its NodePort + the
+  kind node's external IP, which is **not** in that SAN list, so both fail
+  TLS hostname verification (`x509: certificate is valid for 127.0.0.1,
+  not <node-ip>`) if left to auto-discovery. The script works around this
+  by: (1) port-forwarding `ord-ca`'s ClusterIP service to
+  `127.0.0.1:17054` and passing `--ca-url=https://127.0.0.1:17054` to `ca
+  register`; (2) passing `--ca-host=ord-ca.hlf --ca-port=7054` explicitly
+  to `ordnode create` so the operator enrolls the orderer's certs via the
+  in-cluster ClusterIP DNS name (a valid SAN) instead of the NodePort.
+- The script tolerates `ca register` returning "already registered" (e.g.
+  from a prior partial run) and continues to `ordnode create`.
+
+Makefile target: `make kind-orderer`.
 
 ## Task 4: Peers (peer0-org1, peer0-org2) with CouchDB (pending)
 
