@@ -81,8 +81,6 @@ Makefile target: `make kind-cas`.
 
 ## Task 3: Orderer node (pending)
 
-## Task 3: Orderer node (pending)
-
 ## Task 4: Peers (peer0-org1, peer0-org2) with CouchDB (pending)
 
 ## Task 5: Channel `mychannel` + peer joins (pending)
