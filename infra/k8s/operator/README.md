@@ -45,7 +45,41 @@ Expected CRDs include `fabriccas`, `fabricpeers`, `fabricorderernodes`,
 
 Makefile targets: `make kind-up`, `make kind-operator`, `make kind-down`.
 
-## Task 2: Certificate Authorities (org1, org2, orderer) (pending)
+## Task 2: Certificate Authorities (org1, org2, orderer) (DONE)
+
+Creates `org1-ca`, `org2-ca`, `ord-ca` via the operator, enroll id/pw
+`enroll`/`enrollpw`, Fabric CA version 1.5.5, storage class `standard`, 1Gi:
+
+```bash
+bash infra/k8s/operator/scripts/10-cas.sh
+```
+
+Verify (operator provisions asynchronously — wait/re-run until `Running`):
+
+```bash
+kubectl -n hlf get fabriccas.hlf.kungfusoftware.es
+kubectl -n hlf get pods -l app=hlf-ca
+kubectl -n hlf wait --for=condition=ready pod -l app=hlf-ca --timeout=300s
+```
+
+Expected: `org1-ca`, `org2-ca`, `ord-ca` each `RUNNING`/`Running` and `1/1`.
+Each CA is reachable in-cluster via its Kubernetes Service, e.g.
+`org1-ca.hlf.svc.cluster.local:7054` (short form `org1-ca.hlf`).
+
+Note: the plugin's `--hosts` flag (Istio ingress `Gateway`/`VirtualService`)
+is intentionally omitted from the script — this kind cluster has no Istio
+CRDs installed, and using `--hosts` makes the CA's chart install fail
+(`FabricCA` stuck in `FAILED` state) since the operator can't create those
+Istio resource kinds. In-cluster reachability, which is all later
+enroll/register tasks need, comes from the plain Kubernetes `Service` the
+operator creates regardless of `--hosts`.
+
+Also note: this plugin version has no `kubectl hlf ca list` subcommand; use
+`kubectl -n hlf get fabriccas.hlf.kungfusoftware.es` instead.
+
+Makefile target: `make kind-cas`.
+
+## Task 3: Orderer node (pending)
 
 ## Task 3: Orderer node (pending)
 
