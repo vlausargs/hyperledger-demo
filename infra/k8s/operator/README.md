@@ -125,7 +125,52 @@ Notes:
 
 Makefile target: `make kind-orderer`.
 
-## Task 4: Peers (peer0-org1, peer0-org2) with CouchDB (pending)
+## Task 4: Peers (peer0-org1, peer0-org2) with CouchDB (DONE)
+
+Registers a `peer` identity (type `peer`) at `org1-ca` / `org2-ca` for
+`Org1MSP` / `Org2MSP` respectively, then creates `peer0-org1` and
+`peer0-org2` (Fabric peer 2.5.15, storage class `standard`, 2Gi, CouchDB
+state database):
+
+```bash
+bash infra/k8s/operator/scripts/30-peers.sh
+```
+
+Verify:
+
+```bash
+kubectl -n hlf wait --for=condition=ready pod -l app=hlf-peer --timeout=400s
+kubectl -n hlf get pods -l app=hlf-peer
+kubectl -n hlf get fabricpeers.hlf.kungfusoftware.es
+```
+
+Expected: `peer0-org1` and `peer0-org2` pods `Running` `2/2` (peer +
+CouchDB containers both ready).
+
+Notes:
+
+- Same as Tasks 2-3, the brief's `--hosts=peer0-$org.localho.st` flag on
+  `peer create` is dropped — no Istio on this cluster, and `--hosts` would
+  leave the resource `FAILED`. In-cluster reachability (`peer0-org1.hlf`,
+  `peer0-org2.hlf`, needed by later channel/chaincode tasks) comes from the
+  operator's plain Kubernetes `Service` regardless.
+- Same TLS SAN limitation as Task 3: each CA's serving certificate only
+  carries SANs `localhost`/`<ca>`/`<ca>.hlf`/`127.0.0.1`, so
+  NodePort/node-IP auto-discovery fails TLS hostname verification. The
+  script works around this per org by: (1) port-forwarding the CA's
+  ClusterIP service to a local port (`org1-ca` → `127.0.0.1:17055`,
+  `org2-ca` → `127.0.0.1:17056`, distinct per org so the port-forwards
+  don't collide) and passing `--ca-url=https://127.0.0.1:<port>` to `ca
+  register`; (2) passing `--ca-host=<ca>.hlf --ca-port=7054` explicitly to
+  `peer create` so the operator enrolls the peer's certs via the
+  in-cluster ClusterIP DNS name (a valid SAN) instead of the NodePort.
+- The script tolerates `ca register` returning "already registered" (e.g.
+  from a prior partial run) and continues to `peer create`. `peer create`
+  itself is not idempotent (a re-run errors with `already exists` on
+  `peer0-org1` before reaching org2) — same behavior as `ordnode create`
+  in Task 3; delete the `FabricPeer` CR and its PVC before recreating.
+
+Makefile target: `make kind-peers`.
 
 ## Task 5: Channel `mychannel` + peer joins (pending)
 
