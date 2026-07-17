@@ -1,0 +1,10 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: hlf
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30949   # web NodePort
+        hostPort: 30949
+      - containerPort: 30948   # api NodePort
+        hostPort: 30948
