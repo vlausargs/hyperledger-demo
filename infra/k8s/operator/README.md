@@ -280,7 +280,89 @@ manifests were last generated.
 
 Makefile target: `make kind-channel`.
 
-## Task 6: Chaincode `basic` as ccaas (pending)
+## Task 6: Chaincode `basic` as ccaas
+
+Deploys `basic` (Go source: `packages/chaincode`) as chaincode-as-a-service
+(ccaas) — a standalone Deployment/Service running a pre-built image, rather
+than the peer spawning/compiling the chaincode itself — and commits it on
+`mychannel` with endorsement `AND(Org1MSP.member, Org2MSP.member)`.
+
+```bash
+make kind-chaincode
+```
+
+Verify:
+
+```bash
+kubectl -n hlf get fabricchaincode,pod -l chaincode=basic
+kubectl hlf chaincode querycommitted --config=<config> --user=admin --peer=peer0-org1.hlf --channel=mychannel
+```
+
+Expected: pod `basic-...` `Running`; `basic` listed committed on `mychannel`
+at the script's `CC_VERSION`/`CC_SEQUENCE`; a live query against
+`InventoryContract:GetInventory` returns (`[]` on an empty ledger) rather
+than a "chaincode not found" error.
+
+**ccaas support confirmed, no source change needed.** contract-api-go v2
+(`contractapi.(*ContractChaincode).Start()`, in
+`fabric-contract-api-go/v2@v2.0.0/contractapi/contract_chaincode.go`)
+already checks `CHAINCODE_SERVER_ADDRESS` + `CORE_CHAINCODE_ID_NAME` and
+branches into a real ccaas gRPC server (`shim.ChaincodeServer`) when both are
+set, falling back to the peer-launched `shim.Start(cc)` stdio path
+otherwise. `packages/chaincode/main.go`'s existing `cc.Start()` call is
+sufficient; only `packages/chaincode/Dockerfile` needed to be added/set
+`CHAINCODE_SERVER_ADDRESS`.
+
+Four soft spots hit deploying this on the running cluster, all now encoded
+in `scripts/50-chaincode.sh`:
+
+1. **The ccaas Service is always on port 7052**, regardless of
+   `externalchaincode sync`'s `--port` flag (that flag only rewrites the
+   Deployment's env/probe port) — `connection.json`'s `address` and the
+   chaincode image's listen port both need to be `7052` to match.
+2. **`externalchaincode sync`'s update path drops custom `--env`** — a
+   second `sync` against an existing `FabricChaincode` silently loses
+   `CORE_CHAINCODE_ID_NAME` even though a *fresh* object populates it
+   correctly. The script always deletes the `FabricChaincode` before
+   syncing rather than relying on `sync`'s update/`--force` path.
+3. **Reproducible `chaincode.tgz`.** `calculatepackageid` hashes the raw
+   tgz bytes; a naive `tar czf` embeds file mtimes, so a byte-identical
+   `connection.json`/`metadata.json` still produces a different package-id
+   every run. That desyncs the freshly-deployed ccaas pod's
+   `CORE_CHAINCODE_ID_NAME` from whatever package-id is actually approved
+   and committed on the channel, and a `query` against the mismatched pod
+   hangs (peer-side timeout) rather than failing fast. The script builds
+   with `--sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0
+   --numeric-owner` so the package-id is stable run-to-run.
+4. **`kubectl hlf chaincode install/approveformyorg/commit/query` run from
+   the host, not from inside the cluster**, so they need externally
+   reachable endpoints, not in-cluster `*.hlf` DNS. The script generates an
+   SDK config via `kubectl hlf inspect` (Istio `*.localho.st` hostnames,
+   set up in Task 5a — these resolve publicly to loopback) and tunnels
+   through `kubectl port-forward`. `approveformyorg`'s (and `commit`'s
+   submitting-org leg's) TxStatus event registration independently
+   hardcodes `peer0-orgN.localho.st:443` — ignoring `--config`'s peer
+   port entirely — so a literal privileged `:443` tunnel is required
+   (`sudo kubectl port-forward svc/istio-ingressgateway 443:443`); a second,
+   unprivileged tunnel carries the non-submitting org's leg during `commit`
+   to avoid two concurrent SNI connections racing on one `kubectl
+   port-forward` listener (confirmed empirically: one times out
+   otherwise).
+
+`CC_VERSION=1.1` / `CC_SEQUENCE=2` (not `1.0`/`1`): an interactive dry run
+while developing this script — before tar output was made reproducible —
+already committed a stray `1.0`/sequence-1 definition under a package-id
+that doesn't match this script's deterministic build. Fabric lifecycle
+sequences are append-only once committed, so the script targets the next
+sequence rather than fighting the stale one; this has no effect on a
+from-scratch cluster.
+
+Idempotent-tolerant: re-running `make kind-chaincode` recomputes the same
+deterministic package-id, redeploys the ccaas pod, and skips
+approve/commit if `CC_VERSION`/`CC_SEQUENCE` is already committed
+(re-approving/re-committing an already-committed sequence fails on this
+cluster — confirmed empirically) — but always re-runs `install` (which is
+itself idempotent) and the verification query.
 
 ## Task 7: Connect `api` + `web` (pending)
 
