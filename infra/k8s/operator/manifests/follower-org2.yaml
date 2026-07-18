@@ -1,0 +1,86 @@
+apiVersion: hlf.kungfusoftware.es/v1alpha1
+kind: FabricFollowerChannel
+metadata:
+  name: follower-mychannel-org2
+spec:
+  anchorPeers:
+  - host: peer0-org2.hlf
+    port: 7051
+  externalPeersToJoin:
+  - url: grpcs://peer0-org2.hlf:7051
+    tlsCACert: '-----BEGIN CERTIFICATE-----
+
+      MIICRTCCAeugAwIBAgIQVGf4J1otsKvIKKTLHH3O3TAKBggqhkjOPQQDAjBtMQsw
+
+      CQYDVQQGEwJFUzERMA8GA1UEBxMIQWxpY2FudGUxETAPBgNVBAkTCEFsaWNhbnRl
+
+      MRkwFwYDVQQKExBLdW5nIEZ1IFNvZnR3YXJlMQ0wCwYDVQQLEwRUZWNoMQ4wDAYD
+
+      VQQDEwV0bHNjYTAeFw0yNjA3MTYwNzE5MTBaFw0zNjA3MTcwNzE5MTBaMG0xCzAJ
+
+      BgNVBAYTAkVTMREwDwYDVQQHEwhBbGljYW50ZTERMA8GA1UECRMIQWxpY2FudGUx
+
+      GTAXBgNVBAoTEEt1bmcgRnUgU29mdHdhcmUxDTALBgNVBAsTBFRlY2gxDjAMBgNV
+
+      BAMTBXRsc2NhMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEE7mDt2FjLcbpz7pO
+
+      DUr4Gpho0XxcOrlG3FQdq85jm6/btGLGtNRfi6euysKkFkvusjllmT8NOYEdis3t
+
+      XfzTLqNtMGswDgYDVR0PAQH/BAQDAgGmMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggr
+
+      BgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MCkGA1UdDgQiBCDshOLG2DuYpv/UVOhM
+
+      9r4Hopo1x5krasHY5KnfduKenTAKBggqhkjOPQQDAgNIADBFAiEA7SduJG+KLajU
+
+      ygGC5eW6dz/9zNE3nS30+b8HB5XS3Y0CIEulCon/qg4UgwjxiIqRg8HBFv+V9co1
+
+      xLEUPJCbO+/4
+
+      -----END CERTIFICATE-----'
+  hlfIdentity:
+    secretKey: user.yaml
+    secretName: org2-admin
+    secretNamespace: hlf
+  mspId: Org2MSP
+  name: mychannel
+  orderers:
+  - certificate: '-----BEGIN CERTIFICATE-----
+
+      MIIDHDCCAsKgAwIBAgIUGa4ALI+61sxkR9FLO296KXhm0K4wCgYIKoZIzj0EAwIw
+
+      bTELMAkGA1UEBhMCRVMxETAPBgNVBAcTCEFsaWNhbnRlMREwDwYDVQQJEwhBbGlj
+
+      YW50ZTEZMBcGA1UEChMQS3VuZyBGdSBTb2Z0d2FyZTENMAsGA1UECxMEVGVjaDEO
+
+      MAwGA1UEAxMFdGxzY2EwHhcNMjYwNzE2MDcxOTEwWhcNMjcwNzE4MDIzMzAwWjAk
+
+      MRAwDgYDVQQLEwdvcmRlcmVyMRAwDgYDVQQDEwdvcmRlcmVyMFkwEwYHKoZIzj0C
+
+      AQYIKoZIzj0DAQcDQgAEchBWDV/amBr7cXQh48F1u8zErvVr+l/7lk/NXZnb/LaR
+
+      9f22y2vQcULGFp38mLABUFeZHPRaSKmQsbh4GmdrtKOCAYcwggGDMA4GA1UdDwEB
+
+      /wQEAwIDqDAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDAYDVR0TAQH/
+
+      BAIwADAdBgNVHQ4EFgQUNlJept0E/WuNbrJVWsH1NGRUI+4wKwYDVR0jBCQwIoAg
+
+      gbLfy6AFpqwJfcexqRcWzvJsTh76g2Hul7N9oyD+GRgwgZoGA1UdEQSBkjCBj4IJ
+
+      bG9jYWxob3N0gghvcmRlcmVyMIIMb3JkZXJlcjAuaGxmghNvcmRlcmVyMC5sb2Nh
+
+      bGhvLnN0ghlhZG1pbi1vcmRlcmVyMC5sb2NhbGhvLnN0ghNvcmRlcmVyMC5sb2Nh
+
+      bGhvLnN0ghlhZG1pbi1vcmRlcmVyMC5sb2NhbGhvLnN0hwR/AAABhwSsFgACMFsG
+
+      CCoDBAUGBwgBBE97ImF0dHJzIjp7ImhmLkFmZmlsaWF0aW9uIjoiIiwiaGYuRW5y
+
+      b2xsbWVudElEIjoib3JkZXJlciIsImhmLlR5cGUiOiJvcmRlcmVyIn19MAoGCCqG
+
+      SM49BAMCA0gAMEUCIQDcLp4w5kNTaxw3RkkQ9kbshjyqSlzTgXyCWms282ksFQIg
+
+      D1JuJZJB8VOehhlaz4W+vJzQGM4x6z2IamJH+xu5UQk=
+
+      -----END CERTIFICATE-----'
+    url: grpcs://orderer0.hlf:7050
+  peersToJoin: []
+  revocationList: null

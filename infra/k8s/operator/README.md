@@ -230,7 +230,55 @@ via the `ClusterIP` is needed for the operator's admin-API calls.
 
 Makefile target: `make kind-istio`.
 
-## Task 5: Channel `mychannel` + peer joins (pending)
+## Task 5: Channel `mychannel` + peer joins (DONE)
+
+Registers admin identities at each CA, enrolls them as `FabricIdentity` CRs
+(both an MSP identity and a TLS identity per org), generates
+`FabricMainChannel`/`FabricFollowerChannel` manifests from the live cluster
+state, patches in the deltas below, and applies+waits for `RUNNING`:
+
+```bash
+bash infra/k8s/operator/scripts/40-channel.sh
+```
+
+Verify:
+
+```bash
+kubectl -n hlf get fabricmainchannels,fabricfollowerchannels
+```
+
+Expected: `mychannel` (`FabricMainChannel`) and `follower-mychannel-org1` /
+`follower-mychannel-org2` (`FabricFollowerChannel`) all `RUNNING`.
+
+Three deltas the manifests need beyond a naive `channelcrd main/follower
+create` generation (all encoded in the script, all present in the committed
+manifests):
+
+1. **TLS admin identities.** The operator's osnadmin
+   (channel-participation) call needs a TLS *client* identity, not just the
+   MSP identity, or the join fails with `tls: certificate required`. The
+   script enrolls a second `FabricIdentity` per org against the CA's
+   `tlsca` profile (`caname: tlsca`), named `<org>-admin-tls`.
+2. **`<MSP>-tls` entries in the channel `identities` map.** The
+   `FabricMainChannel`'s `spec.identities` map needs `Org1MSP-tls`,
+   `Org2MSP-tls`, `OrdererMSP-tls` keys pointing at those TLS identities'
+   secrets (`secretKey: user.yaml`), alongside the plain `Org1MSP` /
+   `Org2MSP` / `OrdererMSP` MSP-identity entries.
+3. **Internal orderer join.** `ordererOrganizations[0].orderersToJoin`
+   (in-cluster `{name, namespace}` ref) works once the TLS identity above
+   is present — no Istio/external endpoint needed. Keep
+   `externalOrderersToJoin: []`. (The followers' peer join stays on
+   `externalPeersToJoin` — that path already worked and wasn't changed.)
+
+Also note: `spec.orderers[0].tlsCert` (mainchannel) and each follower's
+`spec.orderers[].certificate` must equal the live orderer's
+`FabricOrdererNode.status.tlsCert`. The script re-stamps both from the live
+value on every run; this is a no-op on a normal clean run (the orderer is
+created once, before the channel is generated) and only matters if
+`orderer0` was ever recreated (which would rotate its TLS cert) after the
+manifests were last generated.
+
+Makefile target: `make kind-channel`.
 
 ## Task 6: Chaincode `basic` as ccaas (pending)
 

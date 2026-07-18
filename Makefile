@@ -1,4 +1,4 @@
-.PHONY: build-chaincode build-api test-chaincode test-api test test-integration test-integration-chaincode test-integration-api test-web test-e2e test-all lint clean deploy-monitoring stop-monitoring deploy-api deploy-web deploy-proxy deploy-all stop-api stop-web stop-proxy stop-all config-validate config-policy test-config deploy-fabric stop-fabric add-org helm-lint network-postgres network-ca network-configtx network-orderer network-peers network-channel network-chaincode network-clients network-up network-up-all network-down kind-up kind-operator kind-cas kind-orderer kind-peers kind-istio kind-down
+.PHONY: build-chaincode build-api test-chaincode test-api test test-integration test-integration-chaincode test-integration-api test-web test-e2e test-all lint clean deploy-monitoring stop-monitoring deploy-api deploy-web deploy-proxy deploy-all stop-api stop-web stop-proxy stop-all config-validate config-policy test-config deploy-fabric stop-fabric add-org helm-lint network-postgres network-ca network-configtx network-orderer network-peers network-channel network-chaincode network-clients network-up network-up-all network-down kind-up kind-operator kind-cas kind-orderer kind-peers kind-istio kind-channel kind-down
 
 build-chaincode:
 	cd packages/chaincode && go build -o ../../bin/chaincode .
@@ -173,6 +173,9 @@ kind-peers:
 
 kind-istio:
 	bash infra/k8s/operator/scripts/05-istio.sh
+
+kind-channel:
+	bash infra/k8s/operator/scripts/40-channel.sh
 
 kind-down:
 	kind delete cluster --name hlf

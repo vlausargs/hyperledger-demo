@@ -1,0 +1,309 @@
+apiVersion: hlf.kungfusoftware.es/v1alpha1
+kind: FabricMainChannel
+metadata:
+  name: mychannel
+spec:
+  adminOrdererOrganizations:
+  - mspID: OrdererMSP
+  adminPeerOrganizations:
+  - mspID: Org1MSP
+  - mspID: Org2MSP
+  channelConfig:
+    application:
+      acls: null
+      capabilities:
+      - V2_0
+      policies: null
+    capabilities:
+    - V2_0
+    orderer:
+      batchSize:
+        absoluteMaxBytes: 1048576
+        maxMessageCount: 10
+        preferredMaxBytes: 524288
+      batchTimeout: 2s
+      capabilities:
+      - V2_0
+      consenterMapping: null
+      etcdRaft:
+        options:
+          electionTick: 10
+          heartbeatTick: 1
+          maxInflightBlocks: 5
+          snapshotIntervalSize: 16777216
+          tickInterval: 500ms
+      ordererType: etcdraft
+      policies: null
+      smartBFT: null
+      state: STATE_NORMAL
+    policies: null
+  externalOrdererOrganizations: []
+  externalPeerOrganizations:
+  - mspID: Org1MSP
+    signRootCert: '-----BEGIN CERTIFICATE-----
+
+      MIICPzCCAeagAwIBAgIRAJbSjV1XxIXZnluMG+O0TFUwCgYIKoZIzj0EAwIwajEL
+
+      MAkGA1UEBhMCRVMxETAPBgNVBAcTCEFsaWNhbnRlMREwDwYDVQQJEwhBbGljYW50
+
+      ZTEZMBcGA1UEChMQS3VuZyBGdSBTb2Z0d2FyZTENMAsGA1UECxMEVGVjaDELMAkG
+
+      A1UEAxMCY2EwHhcNMjYwNzE2MDcxOTEwWhcNMzYwNzE3MDcxOTEwWjBqMQswCQYD
+
+      VQQGEwJFUzERMA8GA1UEBxMIQWxpY2FudGUxETAPBgNVBAkTCEFsaWNhbnRlMRkw
+
+      FwYDVQQKExBLdW5nIEZ1IFNvZnR3YXJlMQ0wCwYDVQQLEwRUZWNoMQswCQYDVQQD
+
+      EwJjYTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABE0FOp6Vm4mL1OyEomW1HTTK
+
+      UdQPjHo9co30TaqCeYlEsW+QfMX6EpbVYBHUS92szG1bNdLmpO6h1ydWfL1eT86j
+
+      bTBrMA4GA1UdDwEB/wQEAwIBpjAdBgNVHSUEFjAUBggrBgEFBQcDAgYIKwYBBQUH
+
+      AwEwDwYDVR0TAQH/BAUwAwEB/zApBgNVHQ4EIgQgP2qgPZW3v3KiIM5Y4COvy5nx
+
+      ayIYZ2kTRM2YjbXH/zgwCgYIKoZIzj0EAwIDRwAwRAIgAYrbPurxUc3n3VGnQCYK
+
+      FUVw5gEy0jWtP/lcgP8smlECIHi1xG12QpFqorh0vPr329G1wiV2MOjBdijSl7sR
+
+      l8jz
+
+      -----END CERTIFICATE-----
+
+      '
+    tlsRootCert: '-----BEGIN CERTIFICATE-----
+
+      MIICRTCCAeugAwIBAgIQafDRYoo6TMDiwH9PNDVDXzAKBggqhkjOPQQDAjBtMQsw
+
+      CQYDVQQGEwJFUzERMA8GA1UEBxMIQWxpY2FudGUxETAPBgNVBAkTCEFsaWNhbnRl
+
+      MRkwFwYDVQQKExBLdW5nIEZ1IFNvZnR3YXJlMQ0wCwYDVQQLEwRUZWNoMQ4wDAYD
+
+      VQQDEwV0bHNjYTAeFw0yNjA3MTYwNzE5MTBaFw0zNjA3MTcwNzE5MTBaMG0xCzAJ
+
+      BgNVBAYTAkVTMREwDwYDVQQHEwhBbGljYW50ZTERMA8GA1UECRMIQWxpY2FudGUx
+
+      GTAXBgNVBAoTEEt1bmcgRnUgU29mdHdhcmUxDTALBgNVBAsTBFRlY2gxDjAMBgNV
+
+      BAMTBXRsc2NhMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEigNrtxYL4CfBsHgJ
+
+      SrQnH/tPdTZ8NwSpqJu8mz7AomQOKwEUT5ZWjdbdvm05tGD+ZTW1ETGdDpkDP4LI
+
+      w60SbqNtMGswDgYDVR0PAQH/BAQDAgGmMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggr
+
+      BgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MCkGA1UdDgQiBCD1+Mllq+zRcruTXfwb
+
+      w9DO1Pgg7J3+ivA8aiQwKds44DAKBggqhkjOPQQDAgNIADBFAiAlQIHGl/NWam+m
+
+      BJlXAsFyhUR64fcGF1S5IW2HMWPvawIhAL0jH6eXFk8uzNGPHntt/HdoRCCtzC5p
+
+      GZADSjiNMvj2
+
+      -----END CERTIFICATE-----
+
+      '
+  - mspID: Org2MSP
+    signRootCert: '-----BEGIN CERTIFICATE-----
+
+      MIICQTCCAeagAwIBAgIRAJ3X3GTX/NW/9jijXfF52AwwCgYIKoZIzj0EAwIwajEL
+
+      MAkGA1UEBhMCRVMxETAPBgNVBAcTCEFsaWNhbnRlMREwDwYDVQQJEwhBbGljYW50
+
+      ZTEZMBcGA1UEChMQS3VuZyBGdSBTb2Z0d2FyZTENMAsGA1UECxMEVGVjaDELMAkG
+
+      A1UEAxMCY2EwHhcNMjYwNzE2MDcxOTEwWhcNMzYwNzE3MDcxOTEwWjBqMQswCQYD
+
+      VQQGEwJFUzERMA8GA1UEBxMIQWxpY2FudGUxETAPBgNVBAkTCEFsaWNhbnRlMRkw
+
+      FwYDVQQKExBLdW5nIEZ1IFNvZnR3YXJlMQ0wCwYDVQQLEwRUZWNoMQswCQYDVQQD
+
+      EwJjYTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABNTDpET1UkZ7tBpLSPzpHpzn
+
+      HbhDPRYxgXE40cTzUjIpQW3Kq6Ejgr/CqYnUPpIPLfty+XQxa4Lt1Eo7F+YO3RSj
+
+      bTBrMA4GA1UdDwEB/wQEAwIBpjAdBgNVHSUEFjAUBggrBgEFBQcDAgYIKwYBBQUH
+
+      AwEwDwYDVR0TAQH/BAUwAwEB/zApBgNVHQ4EIgQgCT9vnTlNtyALG9XsjmmkIFkX
+
+      2mnQLb6S1ax1v6M37GowCgYIKoZIzj0EAwIDSQAwRgIhAJ1blDCUfRnmcm6lo/kG
+
+      6TX4OLnyiF1hJBQU5fZsUYFZAiEAigdbr631Dzb2ypeXbDjN99VClqvLWNLIWGTq
+
+      PmPeH54=
+
+      -----END CERTIFICATE-----
+
+      '
+    tlsRootCert: '-----BEGIN CERTIFICATE-----
+
+      MIICRTCCAeugAwIBAgIQVGf4J1otsKvIKKTLHH3O3TAKBggqhkjOPQQDAjBtMQsw
+
+      CQYDVQQGEwJFUzERMA8GA1UEBxMIQWxpY2FudGUxETAPBgNVBAkTCEFsaWNhbnRl
+
+      MRkwFwYDVQQKExBLdW5nIEZ1IFNvZnR3YXJlMQ0wCwYDVQQLEwRUZWNoMQ4wDAYD
+
+      VQQDEwV0bHNjYTAeFw0yNjA3MTYwNzE5MTBaFw0zNjA3MTcwNzE5MTBaMG0xCzAJ
+
+      BgNVBAYTAkVTMREwDwYDVQQHEwhBbGljYW50ZTERMA8GA1UECRMIQWxpY2FudGUx
+
+      GTAXBgNVBAoTEEt1bmcgRnUgU29mdHdhcmUxDTALBgNVBAsTBFRlY2gxDjAMBgNV
+
+      BAMTBXRsc2NhMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEE7mDt2FjLcbpz7pO
+
+      DUr4Gpho0XxcOrlG3FQdq85jm6/btGLGtNRfi6euysKkFkvusjllmT8NOYEdis3t
+
+      XfzTLqNtMGswDgYDVR0PAQH/BAQDAgGmMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggr
+
+      BgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MCkGA1UdDgQiBCDshOLG2DuYpv/UVOhM
+
+      9r4Hopo1x5krasHY5KnfduKenTAKBggqhkjOPQQDAgNIADBFAiEA7SduJG+KLajU
+
+      ygGC5eW6dz/9zNE3nS30+b8HB5XS3Y0CIEulCon/qg4UgwjxiIqRg8HBFv+V9co1
+
+      xLEUPJCbO+/4
+
+      -----END CERTIFICATE-----
+
+      '
+  identities:
+    Org1MSP:
+      secretKey: user.yaml
+      secretName: org1-admin
+      secretNamespace: hlf
+    Org1MSP-tls:
+      secretKey: user.yaml
+      secretName: org1-admin-tls
+      secretNamespace: hlf
+    Org2MSP:
+      secretKey: user.yaml
+      secretName: org2-admin
+      secretNamespace: hlf
+    Org2MSP-tls:
+      secretKey: user.yaml
+      secretName: org2-admin-tls
+      secretNamespace: hlf
+    OrdererMSP:
+      secretKey: user.yaml
+      secretName: ord-admin
+      secretNamespace: hlf
+    OrdererMSP-tls:
+      secretKey: user.yaml
+      secretName: ord-admin-tls
+      secretNamespace: hlf
+  name: mychannel
+  ordererOrganizations:
+  - caName: ord-ca
+    caNamespace: hlf
+    externalOrderersToJoin: []
+    mspID: OrdererMSP
+    ordererEndpoints:
+    - orderer0.hlf:7050
+    orderersToJoin:
+    - name: orderer0
+      namespace: hlf
+    revocationList: null
+    signCACert: '-----BEGIN CERTIFICATE-----
+
+      MIICPjCCAeWgAwIBAgIQClXAphAao1Q5xCc47/vHSzAKBggqhkjOPQQDAjBqMQsw
+
+      CQYDVQQGEwJFUzERMA8GA1UEBxMIQWxpY2FudGUxETAPBgNVBAkTCEFsaWNhbnRl
+
+      MRkwFwYDVQQKExBLdW5nIEZ1IFNvZnR3YXJlMQ0wCwYDVQQLEwRUZWNoMQswCQYD
+
+      VQQDEwJjYTAeFw0yNjA3MTYwNzE5MTBaFw0zNjA3MTcwNzE5MTBaMGoxCzAJBgNV
+
+      BAYTAkVTMREwDwYDVQQHEwhBbGljYW50ZTERMA8GA1UECRMIQWxpY2FudGUxGTAX
+
+      BgNVBAoTEEt1bmcgRnUgU29mdHdhcmUxDTALBgNVBAsTBFRlY2gxCzAJBgNVBAMT
+
+      AmNhMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE8a6LxRVPGHClKuqKGYvnKK5z
+
+      DRtSdLh8IbEIVXDIxvJkNor8oQJkOUJW//p9Zg3in0D1Zru6LrMCaXzasueez6Nt
+
+      MGswDgYDVR0PAQH/BAQDAgGmMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEFBQcD
+
+      ATAPBgNVHRMBAf8EBTADAQH/MCkGA1UdDgQiBCAPOWrY9tG7O1ks4p2EzSZ5jE3E
+
+      95+13V2sXt3tSjXmdzAKBggqhkjOPQQDAgNHADBEAiBLRdXbvb8oIEVfMmLaEVTQ
+
+      BU+YS9h3ZWKmtwP5FdRi5QIgXS87rwSKP+nIsVG1oq53xpfXW8CF91fvoOD8sXHH
+
+      90g=
+
+      -----END CERTIFICATE-----
+
+      '
+    tlsCACert: '-----BEGIN CERTIFICATE-----
+
+      MIICRTCCAeugAwIBAgIQWrnYQq80cgnfwLhUQR9vxDAKBggqhkjOPQQDAjBtMQsw
+
+      CQYDVQQGEwJFUzERMA8GA1UEBxMIQWxpY2FudGUxETAPBgNVBAkTCEFsaWNhbnRl
+
+      MRkwFwYDVQQKExBLdW5nIEZ1IFNvZnR3YXJlMQ0wCwYDVQQLEwRUZWNoMQ4wDAYD
+
+      VQQDEwV0bHNjYTAeFw0yNjA3MTYwNzE5MTBaFw0zNjA3MTcwNzE5MTBaMG0xCzAJ
+
+      BgNVBAYTAkVTMREwDwYDVQQHEwhBbGljYW50ZTERMA8GA1UECRMIQWxpY2FudGUx
+
+      GTAXBgNVBAoTEEt1bmcgRnUgU29mdHdhcmUxDTALBgNVBAsTBFRlY2gxDjAMBgNV
+
+      BAMTBXRsc2NhMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEvFQq8EjNvXx4tvZs
+
+      YT+x6LQFR0uWPx1lfaWs5GY1CQZVyxBY7x8+4fztmNoWI5SBRWGDohGAKgmTNXjZ
+
+      k2LwM6NtMGswDgYDVR0PAQH/BAQDAgGmMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggr
+
+      BgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MCkGA1UdDgQiBCCBst/LoAWmrAl9x7Gp
+
+      FxbO8mxOHvqDYe6Xs32jIP4ZGDAKBggqhkjOPQQDAgNIADBFAiEAjHj9Snqsapl2
+
+      t3rDnZOWsqyNrZmKfifVkVFoW8MRErgCIDH4n2VvlUG6J9pFTSBXKLbMVu34EfwZ
+
+      gfHx7/TQZZO6
+
+      -----END CERTIFICATE-----
+
+      '
+  orderers:
+  - host: orderer0.hlf
+    port: 7050
+    tlsCert: '-----BEGIN CERTIFICATE-----
+
+      MIIDHDCCAsKgAwIBAgIUGa4ALI+61sxkR9FLO296KXhm0K4wCgYIKoZIzj0EAwIw
+
+      bTELMAkGA1UEBhMCRVMxETAPBgNVBAcTCEFsaWNhbnRlMREwDwYDVQQJEwhBbGlj
+
+      YW50ZTEZMBcGA1UEChMQS3VuZyBGdSBTb2Z0d2FyZTENMAsGA1UECxMEVGVjaDEO
+
+      MAwGA1UEAxMFdGxzY2EwHhcNMjYwNzE2MDcxOTEwWhcNMjcwNzE4MDIzMzAwWjAk
+
+      MRAwDgYDVQQLEwdvcmRlcmVyMRAwDgYDVQQDEwdvcmRlcmVyMFkwEwYHKoZIzj0C
+
+      AQYIKoZIzj0DAQcDQgAEchBWDV/amBr7cXQh48F1u8zErvVr+l/7lk/NXZnb/LaR
+
+      9f22y2vQcULGFp38mLABUFeZHPRaSKmQsbh4GmdrtKOCAYcwggGDMA4GA1UdDwEB
+
+      /wQEAwIDqDAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDAYDVR0TAQH/
+
+      BAIwADAdBgNVHQ4EFgQUNlJept0E/WuNbrJVWsH1NGRUI+4wKwYDVR0jBCQwIoAg
+
+      gbLfy6AFpqwJfcexqRcWzvJsTh76g2Hul7N9oyD+GRgwgZoGA1UdEQSBkjCBj4IJ
+
+      bG9jYWxob3N0gghvcmRlcmVyMIIMb3JkZXJlcjAuaGxmghNvcmRlcmVyMC5sb2Nh
+
+      bGhvLnN0ghlhZG1pbi1vcmRlcmVyMC5sb2NhbGhvLnN0ghNvcmRlcmVyMC5sb2Nh
+
+      bGhvLnN0ghlhZG1pbi1vcmRlcmVyMC5sb2NhbGhvLnN0hwR/AAABhwSsFgACMFsG
+
+      CCoDBAUGBwgBBE97ImF0dHJzIjp7ImhmLkFmZmlsaWF0aW9uIjoiIiwiaGYuRW5y
+
+      b2xsbWVudElEIjoib3JkZXJlciIsImhmLlR5cGUiOiJvcmRlcmVyIn19MAoGCCqG
+
+      SM49BAMCA0gAMEUCIQDcLp4w5kNTaxw3RkkQ9kbshjyqSlzTgXyCWms282ksFQIg
+
+      D1JuJZJB8VOehhlaz4W+vJzQGM4x6z2IamJH+xu5UQk=
+
+      -----END CERTIFICATE-----
+
+      '
+  peerOrganizations: []
