@@ -177,15 +177,38 @@ kubectl hlf channelcrd main create -o \
   --secret-ns="$NS" \
   --name=mychannel >"$MANIFEST_DIR/mainchannel.yaml.raw"
 
-python3 - "$MANIFEST_DIR/mainchannel.yaml.raw" "$MANIFEST_DIR/mainchannel.yaml" "$NS" "$ORDERER_TLSCERT_FILE" <<'PYEOF'
+# NOTE 3b: `channelcrd main create` leaves externalPeerOrganizations[].
+# signRootCert / tlsRootCert EMPTY, which fails the operator's channel
+# creation with "certificate pem is empty" on a clean run. Inject each peer
+# org's MSP root (its FabricCA status.ca_cert) and TLS root (status.tlsca_cert).
+for pair in "org1-ca:o1" "org2-ca:o2"; do
+  ca="${pair%%:*}"; p="${pair##*:}"
+  kubectl -n "$NS" get fabriccas.hlf.kungfusoftware.es "$ca" -o jsonpath='{.status.ca_cert}'    >"$MANIFEST_DIR/${p}s.pem"
+  kubectl -n "$NS" get fabriccas.hlf.kungfusoftware.es "$ca" -o jsonpath='{.status.tlsca_cert}' >"$MANIFEST_DIR/${p}t.pem"
+done
+
+python3 - "$MANIFEST_DIR/mainchannel.yaml.raw" "$MANIFEST_DIR/mainchannel.yaml" "$NS" "$ORDERER_TLSCERT_FILE" "$MANIFEST_DIR/o1s.pem" "$MANIFEST_DIR/o1t.pem" "$MANIFEST_DIR/o2s.pem" "$MANIFEST_DIR/o2t.pem" <<'PYEOF'
 import sys
 import yaml
 
 src, dst, ns, tlscert_file = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+o1s, o1t, o2s, o2t = sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8]
+def _read(p):
+    with open(p) as f:
+        return f.read()
+peer_roots = {"Org1MSP": (_read(o1s), _read(o1t)), "Org2MSP": (_read(o2s), _read(o2t))}
 with open(src) as f:
     doc = yaml.safe_load(f)
 with open(tlscert_file) as f:
     orderer_tlscert = f.read()
+
+# Populate the empty peer-org root certs (see NOTE 3b).
+for org in doc["spec"].get("externalPeerOrganizations", []) or []:
+    s, t = peer_roots.get(org.get("mspID"), ("", ""))
+    if s:
+        org["signRootCert"] = s
+    if t:
+        org["tlsRootCert"] = t
 
 # NOTE 1b: the MSP identities alone aren't enough — the operator's
 # osnadmin/channel-participation call additionally needs a TLS client
