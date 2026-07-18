@@ -172,6 +172,64 @@ Notes:
 
 Makefile target: `make kind-peers`.
 
+## Task 5a: Istio + CoreDNS (DONE)
+
+Tasks 2-4 dropped the operator's `--hosts=*.localho.st` flag because this
+kind cluster had no Istio, so the CA/orderer/peer resources are only
+reachable in-cluster via plain Kubernetes Services. The channel task (join
+via the orderer's channel-participation/admin API) needs the operator's
+`FabricMainChannel` to reach the orderer through an Istio ingress host
+(`orderer0.localho.st`); without Istio that host doesn't resolve and the
+admin endpoint falls back to `node-IP:0`, which fails. This task installs
+Istio (istiod + `istio-ingressgateway`, and the `networking.istio.io`
+`Gateway`/`VirtualService` CRDs the operator creates when `--hosts` is
+used) and adds a CoreDNS rewrite so `*.localho.st` resolves in-cluster to
+the ingress gateway:
+
+```bash
+bash infra/k8s/operator/scripts/05-istio.sh
+```
+
+What it does (idempotent — safe to re-run):
+
+1. Downloads `istioctl` 1.23.2 (k8s 1.31-compatible) to `~/.local/bin/istioctl`
+   if not already on `PATH`.
+2. Runs `istioctl install --set profile=default -y`. This installs `istiod`
+   and an `istio-ingressgateway` `Service`/`Deployment` into a new
+   `istio-system` namespace, plus the `networking.istio.io` CRDs
+   (`gateways`, `virtualservices`, etc.). Sidecar injection is **not**
+   enabled on the `hlf` namespace — the operator manages its own
+   `Gateway`/`VirtualService` objects directly, so only the ingress gateway
+   + CRDs are needed cluster-side.
+3. Patches the `coredns` `ConfigMap` in `kube-system`: reads the current
+   Corefile out of the cluster (so it doesn't clobber any other changes),
+   inserts one line —
+   `rewrite name regex (.*)\.localho\.st istio-ingressgateway.istio-system.svc.cluster.local`
+   — inside the `.:53` server block (right after `ready`, before the
+   `kubernetes` plugin so the rewrite is applied before cluster-service
+   resolution), then re-applies the ConfigMap and restarts `coredns`. Skips
+   the patch if the line is already present.
+
+Verify:
+
+```bash
+kubectl -n istio-system get pods
+kubectl get crd | grep networking.istio.io
+kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.spec.clusterIP}'
+kubectl run dnstest --rm -i --restart=Never --image=busybox:1.36 -- nslookup orderer0.localho.st
+```
+
+Expected: `istiod-*` and `istio-ingressgateway-*` pods `Running` `1/1`;
+`gateways.networking.istio.io` and `virtualservices.networking.istio.io`
+(among others) listed; the `nslookup` resolves `orderer0.localho.st` to
+`istio-ingressgateway.istio-system.svc.cluster.local` at the same address
+as the ingress gateway's `CLUSTER-IP` (not NXDOMAIN). The gateway's
+`EXTERNAL-IP` stays `<pending>` in kind (no cloud LoadBalancer
+controller) — that's expected and fine, since only in-cluster resolution
+via the `ClusterIP` is needed for the operator's admin-API calls.
+
+Makefile target: `make kind-istio`.
+
 ## Task 5: Channel `mychannel` + peer joins (pending)
 
 ## Task 6: Chaincode `basic` as ccaas (pending)
