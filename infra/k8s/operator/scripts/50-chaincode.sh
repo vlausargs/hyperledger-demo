@@ -3,16 +3,27 @@ set -euo pipefail
 export PATH="$HOME/.krew/bin:$HOME/.local/bin:$PATH"
 NS=hlf
 CC=basic
-CC_LABEL=basic_1.0
-# version/sequence 1.1/2, not 1.0/1: an earlier interactive dry-run (before
-# this script existed / before tar output was made reproducible, see the
-# TAR_REPRO note below) already committed a 1.0/sequence-1 definition on
-# this live channel under a package-id that doesn't match this script's
-# deterministic build. Fabric lifecycle sequences are append-only/immutable
-# once committed, so the script targets the next sequence instead of
-# fighting the stale one.
-CC_VERSION=1.1
-CC_SEQUENCE=2
+# Env-overridable, defaults to 1.0 so a from-scratch cluster (nothing
+# committed yet for $CC) gets a clean version 1.0/sequence 1 commit. CC_LABEL
+# is derived from CC_VERSION (not a separate hardcoded string) so the
+# installed package label always matches the version being targeted.
+CC_VERSION="${CC_VERSION:-1.0}"
+CC_LABEL="basic_${CC_VERSION}"
+# CC_SEQUENCE is NOT hardcoded — it's computed below (Part F) from the
+# channel's currently-committed definition for $CC, once querycommitted is
+# reachable: no committed definition -> sequence 1 (fresh cluster). A
+# definition already committed -> adopt its sequence and treat it as
+# "already deployed", skipping approve/commit outright (see Part F), rather
+# than trying to guess whether the caller's CC_VERSION is meant to supersede
+# it. Fabric lifecycle only tracks one live (version, sequence) pair per
+# chaincode name per channel and sequences are append-only/immutable once
+# committed, so blindly incrementing to N+1 whenever CC_VERSION differs from
+# what's live would risk committing an unwanted new definition on a shared
+# cluster (e.g. this one, where an earlier interactive dry-run before this
+# script existed already committed basic at 1.1/sequence 2 under a
+# package-id that doesn't match this script's deterministic build) --
+# rolling forward to a genuinely new version is a deliberate, explicit
+# action, not something this script does automatically.
 POLICY="AND('Org1MSP.member','Org2MSP.member')"
 IMAGE=hlf-basic-cc:1.0
 # Query used purely to prove the committed chaincode answers on-chain: a
@@ -42,12 +53,13 @@ cd "$WORK_DIR"
 # sync` + the standard connection.json/metadata.json ccaas package, then
 # installed on both peers, approved by both orgs, and committed on
 # `mychannel` with endorsement AND(Org1MSP,Org2MSP). Idempotent-tolerant: a
-# second run recomputes the same package-id, redeploys the ccaas pod, skips
-# straight to verification if already committed at CC_VERSION/CC_SEQUENCE
+# second run recomputes the same package-id, redeploys the ccaas pod, and
+# skips straight to verification if $CC already has ANY definition committed
 # (re-approving/re-committing an already-committed sequence fails with
 # ENDORSEMENT_POLICY_FAILURE / "must be sequence N+1" — confirmed empirically
 # on this cluster — so re-running install, which IS naturally idempotent, is
-# safe, but approve/commit are gated on querycommitted first).
+# safe, but approve/commit are gated on querycommitted first; see Part F for
+# how CC_SEQUENCE is derived from that query instead of being hardcoded).
 
 # ─── Part A: build the ccaas package (connection.json + metadata.json) ──────
 # Fabric's standard external-builder package layout for "type": "ccaas":
@@ -242,17 +254,38 @@ kubectl hlf chaincode install --path=./chaincode.tgz --config=config.yaml \
 # Re-approving/re-committing an already-committed version+sequence fails
 # (ENDORSEMENT_POLICY_FAILURE, or "requested sequence is N, but new
 # definition must be sequence N+1" — both confirmed empirically), so check
-# querycommitted first and only run approve/commit if this exact
-# version+sequence isn't live yet.
-ALREADY_COMMITTED=0
-if kubectl hlf chaincode querycommitted --config=config.yaml --user=admin \
+# querycommitted first and only run approve/commit if nothing is live yet.
+#
+# CC_SEQUENCE is computed here, dynamically, from whatever querycommitted
+# reports for $CC right now (no version/sequence filter — this is the same
+# call the old hardcoded gate used, just unfiltered so it also matches a
+# definition committed under a *different* version):
+#   - no line for $CC at all -> fresh cluster -> CC_SEQUENCE=1, proceed.
+#   - a line exists at sequence N -> adopt CC_SEQUENCE=N and treat $CC as
+#     already deployed, regardless of whether its committed version equals
+#     this run's CC_VERSION -> skip approve/commit. Deliberately
+#     version-agnostic: this script never auto-decides to roll a channel
+#     forward to a new sequence out from under whatever's already committed
+#     there (see the CC_VERSION comment above) — only an empty
+#     querycommitted result triggers a real commit.
+COMMITTED_LINE=$(kubectl hlf chaincode querycommitted --config=config.yaml --user=admin \
   --peer=peer0-org1.hlf --channel=mychannel 2>/dev/null \
-  | grep -q "^${CC}[[:space:]]*${CC_VERSION}[[:space:]]*${CC_SEQUENCE}[[:space:]]"; then
+  | grep "^${CC}[[:space:]]" || true)
+
+if [[ -z "$COMMITTED_LINE" ]]; then
+  CC_SEQUENCE=1
+  ALREADY_COMMITTED=0
+else
+  read -r _ COMMITTED_VERSION COMMITTED_SEQUENCE _ <<<"$COMMITTED_LINE"
+  CC_SEQUENCE="$COMMITTED_SEQUENCE"
   ALREADY_COMMITTED=1
+  if [[ "$COMMITTED_VERSION" != "$CC_VERSION" ]]; then
+    echo "NOTE: ${CC} is already committed on mychannel at version ${COMMITTED_VERSION} (sequence ${COMMITTED_SEQUENCE}); this run's CC_VERSION=${CC_VERSION} differs, but a definition is already live. Skipping approve/commit rather than risk disrupting it — bump CC_VERSION and commit the next sequence by hand if a real upgrade is intended."
+  fi
 fi
 
 if [[ "$ALREADY_COMMITTED" == "1" ]]; then
-  echo "basic ${CC_VERSION} (sequence ${CC_SEQUENCE}) already committed on mychannel — skipping approve/commit."
+  echo "basic ${COMMITTED_VERSION:-$CC_VERSION} (sequence ${CC_SEQUENCE}) already committed on mychannel — skipping approve/commit."
 else
   kubectl hlf chaincode approveformyorg --config=config.yaml --user=admin --peer=peer0-org1.hlf \
     --package-id="$PACKAGE_ID" --version="$CC_VERSION" --sequence="$CC_SEQUENCE" \

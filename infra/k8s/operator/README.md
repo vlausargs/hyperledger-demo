@@ -8,6 +8,18 @@ Plan: `docs/superpowers/plans/2026-07-17-k8s-operator-deployment.md`
 
 Cluster name: `hlf` (kubectl context `kind-hlf`). Namespace: `hlf`.
 
+## Prerequisites
+
+`make kind-chaincode` / `make kind-all` require **passwordless `sudo -n`**
+for the invoking user. `kubectl hlf chaincode approveformyorg`/`commit`
+hardcode a `peer0-orgN.localho.st:443` endpoint for their TxStatus event
+registration, so `scripts/50-chaincode.sh` must bind the privileged `:443`
+Istio tunnel (`sudo kubectl port-forward svc/istio-ingressgateway 443:443`)
+— see Task 6 below. Either configure `sudo -n` for this user, or grant the
+`kubectl` binary `cap_net_bind_service` instead (e.g. `sudo setcap
+cap_net_bind_service=+ep "$(command -v kubectl)"`) and drop the `sudo -n`
+wrapper around that port-forward.
+
 Task order and commands, appended as each task lands:
 
 ## Task 1: Host prereqs, kind cluster, operator install (DONE)
@@ -299,7 +311,8 @@ kubectl hlf chaincode querycommitted --config=<config> --user=admin --peer=peer0
 ```
 
 Expected: pod `basic-...` `Running`; `basic` listed committed on `mychannel`
-at the script's `CC_VERSION`/`CC_SEQUENCE`; a live query against
+at whatever version/sequence ends up live (see the `CC_VERSION`/`CC_SEQUENCE`
+note below — a from-scratch cluster lands on `1.0`/`1`); a live query against
 `InventoryContract:GetInventory` returns (`[]` on an empty ledger) rather
 than a "chaincode not found" error.
 
@@ -349,20 +362,27 @@ in `scripts/50-chaincode.sh`:
    port-forward` listener (confirmed empirically: one times out
    otherwise).
 
-`CC_VERSION=1.1` / `CC_SEQUENCE=2` (not `1.0`/`1`): an interactive dry run
-while developing this script — before tar output was made reproducible —
-already committed a stray `1.0`/sequence-1 definition under a package-id
-that doesn't match this script's deterministic build. Fabric lifecycle
-sequences are append-only once committed, so the script targets the next
-sequence rather than fighting the stale one; this has no effect on a
-from-scratch cluster.
+`CC_VERSION` defaults to `1.0` (env-overridable) and `CC_LABEL` is always
+derived from it (`basic_<CC_VERSION>`), so a from-scratch cluster commits a
+clean `1.0`/sequence-1 definition. `CC_SEQUENCE` is never hardcoded — the
+script queries the channel's currently-committed definition for `basic`
+(`querycommitted`, unfiltered) at run time: nothing committed yet -> sequence
+`1`; a definition already committed -> adopt its sequence and skip
+approve/commit outright, regardless of whether its version matches this
+run's `CC_VERSION` (Fabric lifecycle sequences are append-only/immutable
+once committed, and this script never auto-decides to roll a channel forward
+to a new sequence out from under whatever's already live there — that's a
+deliberate, explicit action, not automatic). This is why the dev/kind
+cluster this was built against — which already has `basic` committed at
+`1.1`/sequence `2` from an interactive dry run predating reproducible tar
+output — stays untouched on every re-run even though the script's own
+default `CC_VERSION` (`1.0`) doesn't match what's live.
 
 Idempotent-tolerant: re-running `make kind-chaincode` recomputes the same
-deterministic package-id, redeploys the ccaas pod, and skips
-approve/commit if `CC_VERSION`/`CC_SEQUENCE` is already committed
-(re-approving/re-committing an already-committed sequence fails on this
-cluster — confirmed empirically) — but always re-runs `install` (which is
-itself idempotent) and the verification query.
+deterministic package-id, redeploys the ccaas pod, and skips approve/commit
+if `basic` already has any definition committed (re-approving/re-committing
+an already-committed sequence fails — confirmed empirically) — but always
+re-runs `install` (which is itself idempotent) and the verification query.
 
 ## Task 7: Connect `api` + `web` (pending)
 
