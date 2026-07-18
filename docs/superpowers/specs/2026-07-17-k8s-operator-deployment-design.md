@@ -135,3 +135,32 @@ Repo additions:
 | Connection profile drift (localhost → DNS) | Regenerate from operator-issued material; do not hand-edit. |
 | Multi-org signature collection for future add-org | Deferred to Sub-project 2; hlf-operator makes this more manual than the Console did — noted, not solved here. |
 | Fabric 2.5 vs operator defaults (3.x) | Pin Fabric image tags to 2.5.15 in CRDs. |
+
+---
+
+## Addendum (2026-07-18): Istio is required — "skip Istio on kind" reversed
+
+**Discovered during Task 5 (channel).** hlf-operator's `FabricMainChannel` joins the
+orderer through its channel-participation (admin) API, which the operator reaches at
+`node-IP:admin-NodePort`. That NodePort is only allocated when the orderer/peers are
+created **with** `--hosts` + `--admin-hosts` + `--istio-port` — i.e. via Istio ingress.
+With `--hosts` dropped (our original "skip Istio" choice, which correctly avoided
+FAILED CAs/peers), the orderer admin endpoint resolved to `172.22.0.2:0` and the join
+failed `connection refused`.
+
+**Decision:** install Istio. It is the operator's supported path and is *more*
+prod-faithful (production uses ingress; Sub-project 3 needs Istio for cross-cluster).
+
+**Revised approach (supersedes the "Skip Istio on kind" key choice above):**
+- No full cluster rebuild: the operator→gateway channel-join is in-cluster, so we only
+  need Istio installed + a CoreDNS rewrite so `*.localho.st` resolves to the Istio
+  ingress gateway. The Task-1 kind cluster, operator, and the 3 CAs stay as-is.
+- New task **2b — Install Istio + CoreDNS rewrite** (istiod + ingress gateway; CoreDNS
+  `rewrite name regex (.*)\.localho\.st istio-ingressgateway.istio-system.svc.cluster.local`).
+- Tasks 3 (orderer) and 4 (peers) are **recreated** with the ingress flags:
+  - orderer: `--hosts=orderer0.localho.st --admin-hosts=admin-orderer0.localho.st --istio-port=443`
+  - peers: `--hosts=peer0-org1.localho.st` / `peer0-org2.localho.st` `--istio-port=443`
+  - Recreation requires deleting the existing FabricOrdererNode/FabricPeer CRs **and their
+    PVCs** (CR-only delete leaves stale PVCs).
+- Task 5 channel then references orderer endpoints via the ingress host `orderer0.localho.st:443`.
+- The TLS-SAN port-forward workaround for `ca register` (Tasks 3/4) stays — it's independent of Istio.
