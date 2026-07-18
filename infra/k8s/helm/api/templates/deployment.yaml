@@ -33,6 +33,15 @@ spec:
           env:
             - name: SERVER_PORT
               value: "{{ .Values.service.port }}"
+          volumeMounts:
+            - name: connection-profile
+              mountPath: /crypto/connection
+              readOnly: true
+            - name: identity
+              mountPath: /crypto/identity
+              readOnly: true
+            - name: wallet
+              mountPath: /wallet
           livenessProbe:
             httpGet:
               path: /health
@@ -40,10 +49,30 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 20
           readinessProbe:
+            # There is no /ready route (see packages/api/internal/router) —
+            # /health doubles as the readiness check since it already
+            # verifies the fabric gateway/ledger is reachable.
             httpGet:
-              path: /ready
+              path: /health
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: connection-profile
+          secret:
+            secretName: {{ .Values.config.connectionSecretName }}
+        - name: identity
+          secret:
+            secretName: {{ .Values.config.identitySecretName }}
+            # Remaps the operator's flat cert.pem/key.pem Secret keys onto
+            # the signcerts/keystore layout connector.go's loadIdentity()
+            # expects under tlsCertPath (see values.yaml config comment).
+            items:
+              - key: cert.pem
+                path: signcerts/cert.pem
+              - key: key.pem
+                path: keystore/priv_sk
+        - name: wallet
+          emptyDir: {}

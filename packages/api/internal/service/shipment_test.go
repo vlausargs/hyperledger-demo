@@ -63,7 +63,7 @@ func TestShipmentService_Dispatch_NotFound(t *testing.T) {
 func TestShipmentService_Get_HappyPath(t *testing.T) {
 	gw := &mockGateway{
 		evaluateFn: func(fn string, args ...string) ([]byte, error) {
-			if fn != "ReadShipment" || args[0] != "s1" {
+			if fn != "ShipmentContract:ReadShipment" || args[0] != "s1" {
 				t.Fatalf("unexpected call: %s %v", fn, args)
 			}
 			return []byte(`{"id":"s1"}`), nil

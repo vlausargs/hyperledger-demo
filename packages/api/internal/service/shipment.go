@@ -34,7 +34,7 @@ func (s *ShipmentService) Create(_ context.Context, in CreateShipmentInput) (*Cr
 	if err != nil {
 		return nil, apperrors.NewBadRequest("invalid productIds")
 	}
-	if _, err := s.gw.SubmitTransaction("CreateShipment",
+	if _, err := s.gw.SubmitTransaction("ShipmentContract:CreateShipment",
 		in.ID, in.Name, in.Description,
 		in.ReceiverMSP, in.ReceiverName,
 		in.Origin, in.Destination, string(pidJSON)); err != nil {
@@ -45,7 +45,7 @@ func (s *ShipmentService) Create(_ context.Context, in CreateShipmentInput) (*Cr
 
 // Dispatch moves a shipment into the IN_TRANSIT state.
 func (s *ShipmentService) Dispatch(_ context.Context, id string) (*CreateResult, *apperrors.AppError) {
-	if _, err := s.gw.SubmitTransaction("DispatchShipment", id); err != nil {
+	if _, err := s.gw.SubmitTransaction("ShipmentContract:DispatchShipment", id); err != nil {
 		return nil, mapFabricError(err, "shipment")
 	}
 	return &CreateResult{ID: id}, nil
@@ -53,20 +53,20 @@ func (s *ShipmentService) Dispatch(_ context.Context, id string) (*CreateResult,
 
 // Get returns a single shipment.
 func (s *ShipmentService) Get(_ context.Context, id string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "shipment", "ReadShipment", id)
+	return evalRaw(s.gw, "shipment", "ShipmentContract:ReadShipment", id)
 }
 
 // List returns all shipments with paging.
 func (s *ShipmentService) List(_ context.Context, pageSize, bookmark string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "shipments", "GetAllShipments", pageSize, bookmark)
+	return evalRaw(s.gw, "shipments", "ShipmentContract:GetAllShipments", pageSize, bookmark)
 }
 
 // History returns the immutable change history for a shipment.
 func (s *ShipmentService) History(_ context.Context, id string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "shipment history", "GetShipmentHistory", id)
+	return evalRaw(s.gw, "shipment history", "ShipmentContract:GetShipmentHistory", id)
 }
 
 // ByStatus lists shipments in a given status.
 func (s *ShipmentService) ByStatus(_ context.Context, status string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "shipments", "GetShipmentsByStatus", status)
+	return evalRaw(s.gw, "shipments", "ShipmentContract:GetShipmentsByStatus", status)
 }

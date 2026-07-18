@@ -7,9 +7,15 @@ image:
 
 imagePullSecrets: []
 
+# Pinned so the api chart's default API_URL (http://api:8080) and this
+# chart's own predictable name line up the same way (see api/values.yaml).
+fullnameOverride: web
+
 service:
-  type: ClusterIP
+  type: NodePort
   port: 3000
+  # Only honored by the service template when type is NodePort.
+  nodePort: 30949
 
 ingress:
   enabled: true
@@ -24,6 +30,11 @@ ingress:
 
 env:
   NODE_ENV: production
+  # In-cluster DNS name of the api Service (fullnameOverride: api in
+  # api/values.yaml) — read server-side by packages/web/src/lib/server/api.ts
+  # (process.env.API_URL) inside the SvelteKit adapter-node pod, so this
+  # must be a name resolvable from *inside* the cluster, not the host-facing
+  # NodePort (http://localhost:30948).
   API_URL: http://api:8080
 
 resources:

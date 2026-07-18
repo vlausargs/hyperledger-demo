@@ -18,7 +18,7 @@ func NewHealthService(gw FabricGateway) *HealthService {
 // Check runs a cheap evaluate against the ledger. Returns ErrUnavailable
 // when the underlying gateway fails.
 func (s *HealthService) Check(_ context.Context) *apperrors.AppError {
-	if _, err := s.gw.EvaluateTransaction("GetAllProducts", "1", ""); err != nil {
+	if _, err := s.gw.EvaluateTransaction("ProductContract:GetAllProducts", "1", ""); err != nil {
 		return apperrors.NewUnavailable("ledger unreachable")
 	}
 	return nil

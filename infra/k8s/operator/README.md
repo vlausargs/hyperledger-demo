@@ -384,6 +384,78 @@ if `basic` already has any definition committed (re-approving/re-committing
 an already-committed sequence fails — confirmed empirically) — but always
 re-runs `install` (which is itself idempotent) and the verification query.
 
-## Task 7: Connect `api` + `web` (pending)
+## Task 7: Connect `api` + `web`
+
+Deploys `api` (`packages/api`, Go/Gin, fabric-gateway SDK) and `web`
+(`packages/web`, SvelteKit) on the kind cluster, wired end-to-end to the
+operator-managed network — `api` submits/evaluates against `mychannel`'s
+`basic` chaincode through `peer0-org1`'s gateway, endorsed
+`AND(Org1MSP.member, Org2MSP.member)`.
+
+```bash
+make kind-apps
+```
+
+**Bug fixed: bare chaincode function names.** `basic` registers 8 separate
+`contractapi` contracts (`ProductContract`, `ShipmentContract`,
+`CustodyContract`, `EventContract`, `RecallContract`, `SaleContract`,
+`InventoryContract`, `InitContract`), and `InitContract` is the package's
+DEFAULT contract. Every `api` call was invoking chaincode with a bare
+function name (`EvaluateTransaction("GetAllProducts", ...)`,
+`SubmitTransaction("CreateProduct", ...)`, etc.) — in Fabric's
+multi-contract dispatch, a bare name resolves against the default contract
+only, so every call 500'd with `Function X not found in contract
+InitContract`, confirmed live via `kubectl -n hlf logs deploy/api`. Fabric
+requires namespacing: `<Contract>:<Function>`. Fixed by prefixing every
+`SubmitTransaction`/`EvaluateTransaction`/`evalRaw` function string in
+`packages/api/internal/service/*.go` with its owning contract (e.g.
+`"GetAllProducts"` → `"ProductContract:GetAllProducts"`,
+`"CreateShipment"` → `"ShipmentContract:CreateShipment"`); `pos.go` spans
+two contracts (`InventoryContract:GetInventory`,
+`ProductContract:GetProvenance`) since it backs a cross-domain POS view.
+Unit tests asserting the old bare names (`product_test.go`,
+`shipment_test.go`) updated to match.
+
+`scripts/60-apps.sh`:
+
+1. Builds a fabric-gateway connection profile for Org1 matching
+   `ConnectionProfile` in `packages/api/internal/fabric/connector.go`
+   exactly (not `kubectl-hlf`'s own `networkconfig`/`inspect` shape, which
+   doesn't match), pointed at in-cluster `peer0-org1.hlf:7051`, stored as
+   Secret `api-connection`. Peer/CA TLS material comes from each
+   `FabricCA`'s `status.tlsca_cert` (the TLS-issuing sub-CA — not
+   `status.tls_cert`, which is only the CA server's own HTTPS cert and does
+   not validate the peer's serving cert). The `api` client identity is not
+   generated fresh — it reuses the operator's existing `org1-admin`
+   `FabricIdentity` Secret (`cert.pem`/`key.pem`) directly, remapped onto
+   the signcerts/keystore layout `connector.go`'s `loadIdentity()` expects
+   via the Secret volume's `items[].path` in the `api` chart's deployment
+   template. Org1MSP's admin identity is a valid Org1MSP member, sufficient
+   for `AND(Org1MSP.member, Org2MSP.member)` on evaluate/submit.
+2. Builds+loads the `api`/`web` images (`hlf-api:local`/`hlf-web:local`)
+   and `helm upgrade --install`s both charts (NodePort `30948`/`30949`,
+   ingress/autoscaling disabled — this kind cluster has neither an ingress
+   controller nor metrics-server).
+3. Force-restarts both Deployments (`kubectl rollout restart`) after the
+   Helm upgrade. Necessary because the image tag stays `local` across
+   re-runs: a `kind load` that replaces the underlying image content by
+   digest doesn't change anything in the Deployment's pod template (same
+   tag, same `IfNotPresent` policy), so `helm upgrade` alone re-applies an
+   identical spec onto whatever's already running and never rolls already
+   crash-looping pods onto the newly loaded image.
+4. Waits for rollout, then verifies `GET /health`, a login +
+   `GET /api/v1/network/organizations`, and `GET /api/v1/products` — the
+   last one round-trips a real `ProductContract:GetAllProducts` evaluate
+   through the gateway/endorsement path, not just a liveness check.
+
+Idempotent-tolerant: re-running regenerates the connection-profile Secret,
+rebuilds+reloads both images, `helm upgrade --install`s both releases, and
+force-restarts both Deployments — safe against a live cluster.
+
+Verified: `GET /health` → 200 `{"status":"healthy",...}`; login (`admin`/
+`asdqwe123`) → bearer token; `GET /api/v1/products` with that token → 200
+`{"products":[],"bookmark":"PROD~","count":0}` (empty ledger, proves the
+namespaced `ProductContract:GetAllProducts` call round-trips through both
+peers' endorsement).
 
 ## Task 8: Full-run verification, retire skeleton chart, docs (pending)

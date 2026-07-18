@@ -34,7 +34,7 @@ func (s *EventService) Log(_ context.Context, in LogEventInput) (*CreateResult, 
 	if err != nil {
 		return nil, apperrors.NewBadRequest("invalid data: " + err.Error())
 	}
-	if _, err := s.gw.SubmitTransaction("LogEvent",
+	if _, err := s.gw.SubmitTransaction("EventContract:LogEvent",
 		in.ID, in.TargetID, in.TargetType, in.EventType,
 		in.Description, in.Location, in.OccurredAt, dataJSON); err != nil {
 		return nil, mapFabricError(err, "event")
@@ -44,5 +44,5 @@ func (s *EventService) Log(_ context.Context, in LogEventInput) (*CreateResult, 
 
 // List returns events for a target (product or shipment).
 func (s *EventService) List(_ context.Context, targetID string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "events", "GetEvents", targetID)
+	return evalRaw(s.gw, "events", "EventContract:GetEvents", targetID)
 }

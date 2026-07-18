@@ -1,4 +1,4 @@
-.PHONY: build-chaincode build-api test-chaincode test-api test test-integration test-integration-chaincode test-integration-api test-web test-e2e test-all lint clean deploy-monitoring stop-monitoring deploy-api deploy-web deploy-proxy deploy-all stop-api stop-web stop-proxy stop-all config-validate config-policy test-config deploy-fabric stop-fabric add-org helm-lint network-postgres network-ca network-configtx network-orderer network-peers network-channel network-chaincode network-clients network-up network-up-all network-down kind-up kind-operator kind-cas kind-orderer kind-peers kind-istio kind-channel kind-chaincode kind-down
+.PHONY: build-chaincode build-api test-chaincode test-api test test-integration test-integration-chaincode test-integration-api test-web test-e2e test-all lint clean deploy-monitoring stop-monitoring deploy-api deploy-web deploy-proxy deploy-all stop-api stop-web stop-proxy stop-all config-validate config-policy test-config deploy-fabric stop-fabric add-org helm-lint network-postgres network-ca network-configtx network-orderer network-peers network-channel network-chaincode network-clients network-up network-up-all network-down kind-up kind-operator kind-cas kind-orderer kind-peers kind-istio kind-channel kind-chaincode kind-apps kind-down
 
 build-chaincode:
 	cd packages/chaincode && go build -o ../../bin/chaincode .
@@ -181,6 +181,13 @@ kind-chaincode:
 	docker build -t hlf-basic-cc:1.0 packages/chaincode
 	kind load docker-image hlf-basic-cc:1.0 --name hlf
 	bash infra/k8s/operator/scripts/50-chaincode.sh
+
+# Deploys api+web against the operator-managed network (builds+loads
+# hlf-api:local/hlf-web:local, generates the api's connection profile, helm
+# upgrade --installs both charts as NodePort 30948/30949) and verifies
+# end-to-end.
+kind-apps:
+	bash infra/k8s/operator/scripts/60-apps.sh
 
 kind-down:
 	kind delete cluster --name hlf

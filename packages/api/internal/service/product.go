@@ -49,7 +49,7 @@ func (s *ProductService) Create(_ context.Context, in CreateProductInput) (*Crea
 	if err != nil {
 		return nil, apperrors.NewBadRequest("invalid metadata: " + err.Error())
 	}
-	if _, err := s.gw.SubmitTransaction("CreateProduct",
+	if _, err := s.gw.SubmitTransaction("ProductContract:CreateProduct",
 		in.ID, in.SKU, in.Name, in.Description,
 		in.BatchID, in.ManufacturerName, in.ExpiryDate, metaJSON); err != nil {
 		return nil, mapFabricError(err, "product")
@@ -63,7 +63,7 @@ func (s *ProductService) Update(_ context.Context, id string, in UpdateProductIn
 	if err != nil {
 		return nil, apperrors.NewBadRequest("invalid metadata: " + err.Error())
 	}
-	if _, err := s.gw.SubmitTransaction("UpdateProduct", id, in.Name, in.Description, in.ExpiryDate, metaJSON); err != nil {
+	if _, err := s.gw.SubmitTransaction("ProductContract:UpdateProduct", id, in.Name, in.Description, in.ExpiryDate, metaJSON); err != nil {
 		return nil, mapFabricError(err, "product")
 	}
 	return &CreateResult{ID: id}, nil
@@ -71,32 +71,32 @@ func (s *ProductService) Update(_ context.Context, id string, in UpdateProductIn
 
 // Get returns the raw product JSON from the ledger.
 func (s *ProductService) Get(_ context.Context, id string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "product", "ReadProduct", id)
+	return evalRaw(s.gw, "product", "ProductContract:ReadProduct", id)
 }
 
 // List returns all products with paging.
 func (s *ProductService) List(_ context.Context, pageSize, bookmark string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "products", "GetAllProducts", pageSize, bookmark)
+	return evalRaw(s.gw, "products", "ProductContract:GetAllProducts", pageSize, bookmark)
 }
 
 // History returns the immutable change history for a product.
 func (s *ProductService) History(_ context.Context, id string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "product history", "GetProductHistory", id)
+	return evalRaw(s.gw, "product history", "ProductContract:GetProductHistory", id)
 }
 
 // Provenance returns the upstream supply-chain trace.
 func (s *ProductService) Provenance(_ context.Context, id string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "product", "GetProvenance", id)
+	return evalRaw(s.gw, "product", "ProductContract:GetProvenance", id)
 }
 
 // ByBatch lists products that belong to a batch.
 func (s *ProductService) ByBatch(_ context.Context, batchID string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "products", "GetProductsByBatch", batchID)
+	return evalRaw(s.gw, "products", "ProductContract:GetProductsByBatch", batchID)
 }
 
 // ByStatus lists products in a given lifecycle status.
 func (s *ProductService) ByStatus(_ context.Context, status string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "products", "GetProductsByStatus", status)
+	return evalRaw(s.gw, "products", "ProductContract:GetProductsByStatus", status)
 }
 
 // ── shared helpers (kept in this file so each domain file is self-contained

@@ -22,11 +22,11 @@ func (s *POSService) Inventory(_ context.Context, ownerMSP string) (json.RawMess
 	if ownerMSP == "" {
 		ownerMSP = "Org3MSP"
 	}
-	return evalRaw(s.gw, "inventory", "GetInventory", ownerMSP)
+	return evalRaw(s.gw, "inventory", "InventoryContract:GetInventory", ownerMSP)
 }
 
 // VerifyProduct returns the upstream provenance — used at checkout to flag
 // recalled or untraceable items before sale.
 func (s *POSService) VerifyProduct(_ context.Context, productID string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "product", "GetProvenance", productID)
+	return evalRaw(s.gw, "product", "ProductContract:GetProvenance", productID)
 }

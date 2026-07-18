@@ -48,7 +48,7 @@ func (s *SaleService) Create(_ context.Context, in CreateSaleInput) (*CreateResu
 		currency = "IDR"
 	}
 	taxStr := fmt.Sprintf("%f", in.TaxAmount)
-	if _, err := s.gw.SubmitTransaction("CreateSale",
+	if _, err := s.gw.SubmitTransaction("SaleContract:CreateSale",
 		in.ID, in.CustomerID, in.CashierID, in.CashierName,
 		string(itemsBytes), taxStr, currency, in.Notes); err != nil {
 		return nil, mapFabricError(err, "sale")
@@ -58,15 +58,15 @@ func (s *SaleService) Create(_ context.Context, in CreateSaleInput) (*CreateResu
 
 // Get returns a single sale by ID.
 func (s *SaleService) Get(_ context.Context, id string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "sale", "ReadSale", id)
+	return evalRaw(s.gw, "sale", "SaleContract:ReadSale", id)
 }
 
 // List returns all sales with paging.
 func (s *SaleService) List(_ context.Context, pageSize, bookmark string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "sales", "GetAllSales", pageSize, bookmark)
+	return evalRaw(s.gw, "sales", "SaleContract:GetAllSales", pageSize, bookmark)
 }
 
 // ListByCustomer returns sales filtered by customer.
 func (s *SaleService) ListByCustomer(_ context.Context, customerID string) (json.RawMessage, *apperrors.AppError) {
-	return evalRaw(s.gw, "sales", "GetSalesByCustomer", customerID)
+	return evalRaw(s.gw, "sales", "SaleContract:GetSalesByCustomer", customerID)
 }

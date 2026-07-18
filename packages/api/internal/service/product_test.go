@@ -32,8 +32,8 @@ func TestProductService_Create_HappyPath(t *testing.T) {
 	if res.ID != "p1" {
 		t.Errorf("want id=p1, got %s", res.ID)
 	}
-	if gotFn != "CreateProduct" {
-		t.Errorf("want fn=CreateProduct, got %s", gotFn)
+	if gotFn != "ProductContract:CreateProduct" {
+		t.Errorf("want fn=ProductContract:CreateProduct, got %s", gotFn)
 	}
 	if len(gotArgs) != 8 || gotArgs[0] != "p1" {
 		t.Errorf("unexpected args: %#v", gotArgs)
