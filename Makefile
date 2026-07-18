@@ -1,4 +1,4 @@
-.PHONY: build-chaincode build-api test-chaincode test-api test test-integration test-integration-chaincode test-integration-api test-web test-e2e test-all lint clean deploy-monitoring stop-monitoring deploy-api deploy-web deploy-proxy deploy-all stop-api stop-web stop-proxy stop-all config-validate config-policy test-config deploy-fabric stop-fabric add-org helm-lint network-postgres network-ca network-configtx network-orderer network-peers network-channel network-chaincode network-clients network-up network-up-all network-down kind-up kind-operator kind-cas kind-orderer kind-peers kind-istio kind-channel kind-chaincode kind-apps kind-down
+.PHONY: build-chaincode build-api test-chaincode test-api test test-integration test-integration-chaincode test-integration-api test-web test-e2e test-all lint clean deploy-monitoring stop-monitoring deploy-api deploy-web deploy-proxy deploy-all stop-api stop-web stop-proxy stop-all config-validate config-policy test-config deploy-fabric stop-fabric add-org helm-lint network-postgres network-ca network-configtx network-orderer network-peers network-channel network-chaincode network-clients network-up network-up-all network-down kind-up kind-operator kind-cas kind-orderer kind-peers kind-istio kind-channel kind-chaincode kind-apps kind-down kind-network kind-all
 
 build-chaincode:
 	cd packages/chaincode && go build -o ../../bin/chaincode .
@@ -191,3 +191,12 @@ kind-apps:
 
 kind-down:
 	kind delete cluster --name hlf
+
+# Composite bring-up. Order matters: istio (05) must precede orderer/peers,
+# which are created WITH Istio ingress flags the operator needs to reconcile
+# their channel-participation/gossip endpoints (see infra/k8s/operator/README).
+kind-network: kind-cas kind-istio kind-orderer kind-peers kind-channel
+
+# Full clean bring-up from zero: cluster -> operator -> network -> chaincode -> apps.
+# Requires passwordless `sudo -n` (see README Prerequisites) for the chaincode step.
+kind-all: kind-up kind-operator kind-network kind-chaincode kind-apps
