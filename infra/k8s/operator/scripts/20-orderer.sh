@@ -3,13 +3,14 @@ set -euo pipefail
 export PATH="$HOME/.krew/bin:$HOME/.local/bin:$PATH"
 NS=hlf
 
-# NOTE 1: the brief's --hosts=orderer0.localho.st flag (on `ordnode create`,
-# below) provisions an Istio Gateway/VirtualService for external ingress
-# (same as Task 2's CA --hosts flag). This kind cluster has no Istio CRDs
-# installed, so --hosts would leave the FabricOrdererNode resource FAILED.
-# The operator's plain Kubernetes Service already gives the in-cluster
-# endpoint orderer0.hlf:7050 that later tasks (channel creation) need, so
-# --hosts is dropped here rather than standing up Istio.
+# NOTE 1: --hosts/--admin-hosts (on `ordnode create`, below) are now REQUIRED.
+# Istio is installed in this cluster (see Task 5a), and the operator's
+# channel-participation admin endpoint is only populated when the
+# FabricOrdererNode is provisioned with an Istio Gateway/VirtualService for
+# external ingress. Without --hosts/--admin-hosts the admin endpoint comes
+# back as node-IP:0 and channel join fails. --istio-port=443 routes through
+# the Istio ingress gateway's HTTPS port (matches the *.localho.st ingress
+# set up in Task 5a).
 
 # NOTE 2: `kubectl hlf ca register`, run from the host, auto-discovers the
 # CA's address via its NodePort + the kind node's external IP (e.g.
@@ -62,4 +63,5 @@ kubectl hlf ordnode create \
   --mspid=OrdererMSP \
   --name=orderer0 --namespace="$NS" \
   --ca-name=ord-ca.$NS \
-  --ca-host=ord-ca.$NS --ca-port=7054
+  --ca-host=ord-ca.$NS --ca-port=7054 \
+  --hosts=orderer0.localho.st --admin-hosts=admin-orderer0.localho.st --istio-port=443

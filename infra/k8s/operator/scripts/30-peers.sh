@@ -6,12 +6,13 @@ NS=hlf
 # See infra/k8s/operator/scripts/20-orderer.sh for the full rationale behind
 # the two workarounds below (same cluster, same CA cert limitations):
 #
-# NOTE 1: the brief's --hosts=peer0-$org.localho.st flag (on `peer create`)
-# provisions an Istio Gateway/VirtualService for external ingress. This kind
-# cluster has no Istio CRDs installed, so --hosts would leave the FabricPeer
-# resource FAILED. The operator's plain Kubernetes Service already gives the
-# in-cluster endpoint peer0-$org.hlf:7051 that later tasks (channel/chaincode)
-# need, so --hosts is dropped here rather than standing up Istio.
+# NOTE 1: --hosts=peer0-$org.localho.st (on `peer create`) is now REQUIRED.
+# Istio is installed in this cluster (see Task 5a), and the operator's
+# channel-participation admin endpoint is only populated when the FabricPeer
+# is provisioned with an Istio Gateway/VirtualService for external ingress.
+# Without --hosts the admin endpoint comes back as node-IP:0 and channel join
+# fails. --istio-port=443 routes through the Istio ingress gateway's HTTPS
+# port (matches the *.localho.st ingress set up in Task 5a).
 #
 # NOTE 2: `kubectl hlf ca register`, run from the host, auto-discovers the
 # CA's address via its NodePort + the kind node's external IP. But each CA's
@@ -66,7 +67,8 @@ create_peer () {
     --name="peer0-$org" --namespace="$NS" \
     --ca-name="$ca.$NS" \
     --ca-host="$ca.$NS" --ca-port=7054 \
-    --statedb=couchdb
+    --statedb=couchdb \
+    --hosts="peer0-$org.localho.st" --istio-port=443
 }
 
 create_peer org1 Org1MSP org1-ca 17055
